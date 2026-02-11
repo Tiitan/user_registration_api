@@ -1,10 +1,11 @@
 import asyncio
-import os
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, cast
 
 import asyncmy
 from fastapi import FastAPI
+
+from api.app.config import get_settings
 
 
 @asynccontextmanager
@@ -20,34 +21,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 async def _create_mysql_pool_with_retry() -> asyncmy.Pool:
-    host = os.getenv("MYSQL_HOST", "mysql")
-    port = int(os.getenv("MYSQL_PORT", "3306"))
-    user = os.getenv("MYSQL_USER", "app")
-    password = os.getenv("MYSQL_PASSWORD", "app")
-    database = os.getenv("MYSQL_DATABASE", "user_registration")
+    settings = get_settings()
 
     last_exception: Exception | None = None
 
-    for _ in range(30):
+    for _ in range(settings.mysql_connect_retries):
         try:
             return cast(
                 asyncmy.Pool,
                 await asyncmy.create_pool(
-                    host=host,
-                    port=port,
-                    user=user,
-                    password=password,
-                    db=database,
-                    minsize=1,
-                    maxsize=10,
+                    host=settings.mysql_host,
+                    port=settings.mysql_port,
+                    user=settings.mysql_user,
+                    password=settings.mysql_password,
+                    db=settings.mysql_database,
+                    minsize=settings.mysql_pool_minsize,
+                    maxsize=settings.mysql_pool_maxsize,
                     autocommit=True,
                 ),
             )
         except Exception as exc:
             last_exception = exc
-            await asyncio.sleep(1)
+            await asyncio.sleep(settings.mysql_retry_delay_seconds)
 
-    raise RuntimeError("Unable to connect to MySQL after 30 attempts") from last_exception
+    raise RuntimeError(
+        f"Unable to connect to MySQL after {settings.mysql_connect_retries} attempts"
+    ) from last_exception
 
 app = FastAPI(
     title="User Registration API",
