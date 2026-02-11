@@ -51,11 +51,6 @@ class RegistrationService:
                 await connection.rollback()
                 raise
 
-        self._email_dispatcher.dispatch_activation_email(
-            user_id=user_id,
-            activation_code_id=activation_code_id,
-            recipient_email=email,
-            code=code,
-        )
+        self._email_dispatcher.dispatch_activation_email(user_id=user_id, activation_code_id=activation_code_id, recipient_email=email, code=code)
 
         return UserResponse(id=user_id, email=email, status="PENDING")

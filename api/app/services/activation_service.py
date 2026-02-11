@@ -12,7 +12,6 @@ from api.app.exceptions.domain import (
     ActivationCodeAttemptsExceededError,
     ActivationCodeExpiredError,
     ActivationCodeMismatchError,
-    ActivationCodeNotDeliveredError,
     InvalidCredentialsError,
     UserNotFoundError,
 )
@@ -53,15 +52,15 @@ class ActivationService:
 
                     await cursor.execute("SELECT id, code, sent_at, attempt_count, (CURRENT_TIMESTAMP(6) > DATE_ADD(sent_at, INTERVAL %s SECOND)) AS is_expired FROM activation_codes WHERE user_id = %s AND used_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE", (self._activation_code_ttl_seconds, user_id))
                     code_row = await cursor.fetchone()
-                    if code_row is None or code_row["sent_at"] is None:
-                        raise ActivationCodeNotDeliveredError()
+                    if code_row is None:
+                        raise ActivationCodeMismatchError()
 
                     activation_code_id = int(code_row["id"])
                     attempt_count = int(code_row["attempt_count"])
                     if attempt_count >= self._activation_code_max_attempts:
                         raise ActivationCodeAttemptsExceededError()
 
-                    if int(code_row["is_expired"]) == 1:
+                    if code_row["sent_at"] is not None and int(code_row["is_expired"]) == 1:
                         new_code = f"{secrets.randbelow(10_000):04d}"
                         await cursor.execute("INSERT INTO activation_codes (user_id, code) VALUES (%s, %s)", (user_id, new_code))
                         new_activation_code_id = int(cursor.lastrowid)
@@ -75,27 +74,15 @@ class ActivationService:
                         raise ActivationCodeMismatchError()
 
                     await cursor.execute("UPDATE activation_codes SET used_at = CURRENT_TIMESTAMP(6) WHERE id = %s AND used_at IS NULL", (activation_code_id,))
-                    await cursor.execute(
-                        "UPDATE users SET status = 'ACTIVE', activated_at = CURRENT_TIMESTAMP(6) WHERE id = %s AND status = 'PENDING'",
-                        (user_id,),
-                    )
+                    await cursor.execute("UPDATE users SET status = 'ACTIVE', activated_at = CURRENT_TIMESTAMP(6) WHERE id = %s AND status = 'PENDING'", (user_id,))
                 await connection.commit()
-            except ActivationCodeExpiredError:
-                await connection.commit()
-                activation_expired = True
-            except (
-                ActivationCodeMismatchError,
-                ActivationCodeAttemptsExceededError,
-                InvalidCredentialsError,
-                AccountAlreadyActiveError,
-                UserNotFoundError,
-                ActivationCodeNotDeliveredError,
-            ):
-                await connection.rollback()
-                raise
-            except Exception:
-                await connection.rollback()
-                logger.exception("Activation transaction failed for email=%s", email)
+            except Exception as error:
+                if isinstance(error, ActivationCodeExpiredError):
+                    await connection.commit()
+                    activation_expired = True
+                else:
+                    await connection.rollback()
+                logger.exception("Activation transaction failed for email=%s, error:%s", email, error)
                 raise
 
         if resend_info is not None:

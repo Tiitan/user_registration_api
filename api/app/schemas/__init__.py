@@ -1,3 +1,13 @@
-from api.app.schemas.users import CreateUserRequest, UserResponse
+from api.app.schemas.common import HeartbeatResponse
+from api.app.schemas.errors import ErrorDetail, ErrorResponse
+from api.app.schemas.users import ActivateUserRequest, ActivatedUserResponse, CreateUserRequest, UserResponse
 
-__all__ = ["CreateUserRequest", "UserResponse"]
+__all__ = [
+    "ActivateUserRequest",
+    "ActivatedUserResponse",
+    "CreateUserRequest",
+    "ErrorDetail",
+    "ErrorResponse",
+    "HeartbeatResponse",
+    "UserResponse",
+]

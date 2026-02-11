@@ -1,14 +1,27 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Security, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from api.app.dependencies import get_registration_service
-from api.app.exceptions.domain import EmailAlreadyExistsError
-from api.app.schemas.users import CreateUserRequest, UserResponse
+from api.app.dependencies import get_activation_service, get_registration_service
+from api.app.exceptions.domain import (
+    AccountAlreadyActiveError,
+    ActivationCodeAttemptsExceededError,
+    ActivationCodeExpiredError,
+    ActivationCodeMismatchError,
+    ActivationCodeNotDeliveredError,
+    EmailAlreadyExistsError,
+    InvalidCredentialsError,
+    UserNotFoundError,
+)
+from api.app.schemas.errors import ErrorResponse
+from api.app.schemas.users import ActivateUserRequest, ActivatedUserResponse, CreateUserRequest, UserResponse
+from api.app.services.activation_service import ActivationService
 from api.app.services.registration_service import RegistrationService
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
 logger = logging.getLogger(__name__)
+http_basic = HTTPBasic(auto_error=False)
 
 
 @router.post(
@@ -18,9 +31,13 @@ logger = logging.getLogger(__name__)
     summary="Create a user",
     description="Create or reset a pending user account and schedule activation code delivery.",
     responses={
-        201: {"description": "User created successfully"},
+        201: {
+            "description": "User created or pending account reset",
+            "content": {"application/json": {"example": {"id": 123, "email": "user@example.com", "status": "PENDING"}}},
+        },
         409: {
             "description": "Email already belongs to an active account",
+            "model": ErrorResponse,
             "content": {
                 "application/json": {
                     "example": {
@@ -33,7 +50,7 @@ logger = logging.getLogger(__name__)
                 }
             },
         },
-        422: {"description": "Validation error"},
+        422: {"description": "Payload validation error"},
     },
 )
 async def create_user(payload: CreateUserRequest, service: RegistrationService = Depends(get_registration_service)) -> UserResponse:

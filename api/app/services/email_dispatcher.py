@@ -22,12 +22,7 @@ class EmailDispatcher:
 
     def dispatch_activation_email(self, *, user_id: int, activation_code_id: int, recipient_email: str, code: str) -> None:
         task = asyncio.create_task(
-            self._run_dispatch(
-                user_id=user_id,
-                activation_code_id=activation_code_id,
-                recipient_email=recipient_email,
-                code=code,
-            )
+            self._run_dispatch(user_id=user_id, activation_code_id=activation_code_id, recipient_email=recipient_email, code=code)
         )
         self._background_tasks.add(task)
 
@@ -44,16 +39,8 @@ class EmailDispatcher:
 
     async def _run_dispatch(self, *, user_id: int, activation_code_id: int, recipient_email: str, code: str) -> None:
         async with self._dispatch_semaphore:
-            await self._send_activation_email(
-                recipient_email=recipient_email,
-                code=code,
-                user_id=user_id,
-                activation_code_id=activation_code_id,
-            )
-            sent_at_marked = await self._mark_activation_code_sent_with_retries(
-                activation_code_id=activation_code_id,
-                user_id=user_id,
-            )
+            await self._send_activation_email(recipient_email=recipient_email, code=code, user_id=user_id, activation_code_id=activation_code_id)
+            sent_at_marked = await self._mark_activation_code_sent_with_retries(activation_code_id=activation_code_id, user_id=user_id)
             if sent_at_marked:
                 logger.info("Activation email delivered user_id=%s activation_code_id=%s", user_id, activation_code_id)
             else:

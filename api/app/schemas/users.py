@@ -27,10 +27,7 @@ class CreateUserRequest(BaseModel):
     @classmethod
     def validate_password_strength(cls, value: str) -> str:
         if len(value) < 8:
-            raise PydanticCustomError(
-                "password_too_short",
-                "Password must be at least 8 characters long",
-            )
+            raise PydanticCustomError("password_too_short", "Password must be at least 8 characters long")
         if not PASSWORD_HAS_LETTER.search(value) or not PASSWORD_HAS_DIGIT.search(value):
             raise PydanticCustomError(
                 "password_not_complex_enough",
@@ -53,3 +50,24 @@ class UserResponse(BaseModel):
     id: int = Field(description="Unique user identifier")
     email: EmailStr = Field(description="Registered user email")
     status: Literal["PENDING"] = Field(description="Current user status")
+
+
+class ActivateUserRequest(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"example": {"code": "1234"}})
+
+    code: str = Field(description="4-digit activation code")
+
+    @field_validator("code")
+    @classmethod
+    def validate_code_format(cls, value: str) -> str:
+        if not re.fullmatch(r"\d{4}", value):
+            raise PydanticCustomError("invalid_activation_code_format", "Code must contain exactly 4 digits")
+        return value
+
+
+class ActivatedUserResponse(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"example": {"id": 123, "email": "user@example.com", "status": "ACTIVE"}})
+
+    id: int = Field(description="Unique user identifier")
+    email: EmailStr = Field(description="Registered user email")
+    status: Literal["ACTIVE"] = Field(description="Current user status")

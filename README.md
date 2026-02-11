@@ -24,10 +24,6 @@ tables from `docs/architecture.md`:
 
 - `users`
 - `activation_codes`
-- `outbox_events`
-
-Schema initialization is one-time for a given MySQL volume. If you change schema later,
-this setup does not provide migrations.
 
 To force re-initialization locally:
 
