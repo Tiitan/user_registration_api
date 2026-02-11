@@ -17,6 +17,7 @@ services:
       start_period: 10s
     volumes:
       - mysql-data:/var/lib/mysql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
 
   api:
     build:

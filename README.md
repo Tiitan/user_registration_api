@@ -16,6 +16,26 @@ API URL: `http://localhost:8000`
 
 The API connects to MySQL on startup through FastAPI lifespan.
 
+## Database initialization
+
+MySQL automatically runs SQL files from `/docker-entrypoint-initdb.d` only when initializing
+a new data directory. This project mounts `db/init/001_init_schema.sql` there to create the
+tables from `docs/architecture.md`:
+
+- `users`
+- `activation_codes`
+- `outbox_events`
+
+Schema initialization is one-time for a given MySQL volume. If you change schema later,
+this setup does not provide migrations.
+
+To force re-initialization locally:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
 ## Run tests
 
 ```bash
