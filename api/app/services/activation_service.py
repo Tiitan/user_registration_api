@@ -54,11 +54,7 @@ class ActivationService:
                         raise AccountAlreadyActiveError()
 
                     await cursor.execute(
-                        "SELECT id, code, sent_at, attempt_count "
-                        "FROM activation_codes "
-                        "WHERE user_id = %s AND used_at IS NULL "
-                        "ORDER BY created_at DESC, id DESC "
-                        "LIMIT 1 FOR UPDATE",
+                        "SELECT id, code, sent_at, attempt_count FROM activation_codes WHERE user_id = %s ORDER BY created_at DESC, id DESC  LIMIT 1 FOR UPDATE",
                         (user_id,),
                     )
                     code_row = await cursor.fetchone()

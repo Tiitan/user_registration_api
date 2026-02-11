@@ -10,7 +10,7 @@ Core capabilities:
 - Generate a 4-digit activation code.
 - Send activation emails through a third-party HTTP provider.
 - Activate account using Basic Auth and activation code.
-- Enforce a 60-second activation window starting when email delivery succeeds.
+- Enforce a 60-second activation window once delivery timestamp is available, while allowing activation during async `sent_at` write race.
 
 Delivery model:
 
@@ -39,6 +39,11 @@ Resilience baseline:
 - Short provider timeout.
 - Bounded retries for retryable failures.
 - No durable recovery queue in baseline.
+
+Trade-off in baseline:
+- Simpler and faster to operate (no separate email worker runtime).
+- Email delivery is best-effort, not durable at-least-once.
+
 
 ## 3. High-Level Architecture
 
@@ -72,8 +77,6 @@ api/app/
     registration_service.py  -> registration + post-commit dispatch trigger
     activation_service.py    -> activation use case
     email_dispatcher.py      -> retries/backoff/concurrency-limited dispatch
-  integrations/
-    email_provider_client.py -> HTTP provider integration
   repositories/              -> SQL access layer
   security/                  -> hashing + Basic Auth helpers
   exceptions/                -> domain errors + HTTP mapping
@@ -109,7 +112,7 @@ Constraints/indexes:
 Rules:
 
 - `sent_at` is set only after provider send success.
-- Activation validity is derived from `sent_at + 60s`.
+- Activation validity is derived from `sent_at + 60s` when `sent_at` is available.
 - Activation code is stored as plaintext by design for this scope.
 
 ## 7. API Contract
@@ -166,8 +169,8 @@ Responses:
 Activation eligibility:
 
 - A matching code exists.
-- `sent_at` is set.
-- Current time is `<= sent_at + 60s`.
+- If `sent_at` is set, current time is `<= sent_at + 60s`.
+- If `sent_at` is not set yet, activation is still allowed to avoid rejecting users during the async persistence race.
 - Code has not been used.
 
 ## 7.3 `GET /heartbeat`
@@ -194,7 +197,7 @@ Dispatcher -> Logs/Metrics: record final failure after retries
 Key behavior:
 
 - User creation stays fast and decoupled from provider latency.
-- The 60-second activation window starts only when `sent_at` is written.
+- The 60-second activation window is enforced when `sent_at` is available; activation is still allowed before `sent_at` is persisted.
 
 ## 8.2 Activation
 
@@ -202,8 +205,8 @@ Key behavior:
 Client -> API: POST /v1/users/activate + Basic Auth
 API -> Security: verify credentials
 API -> Service: activate_user
-Service -> DB (tx): lock user + latest valid code
-Service -> DB (tx): verify code, sent_at, expiry, then set ACTIVE + used_at
+Service -> DB (tx): lock user + latest created code
+Service -> DB (tx): verify code, expiry, then set ACTIVE + used_at
 Service -> API: success
 API -> Client: 200
 ```
@@ -245,7 +248,7 @@ Known limitation (best-effort):
 - Unique email enforced by DB unique constraint.
 - Registration and activation use DB transactions with row locking where needed.
 - Status transition guarded (`PENDING -> ACTIVE` once).
-- Code validation targets latest delivered, unused code.
+- Code validation targets latest created.
 - Failed activation checks atomically increment `attempt_count`.
 
 ## 12. Error Model
@@ -293,77 +296,15 @@ Lifespan-managed resources:
   - provider error rate
   - undelivered activation code count (`sent_at IS NULL`)
 
-## 15. SQL Migration Strategy
-
-- Keep explicit SQL migrations in `api/app/db/migrations/`.
-- Apply migrations through a dedicated migration command/container.
-- Monotonic versioning, e.g., `001_init.sql`, `002_*.sql`.
-
-## 16. Periodic Cleanup
+## 15. Periodic Cleanup
 
 - `registration_cleanup` every hour:
   - delete abandoned pending users older than retention window (e.g., 24h)
   - delete stale activation codes according to retention policy
 
-## 17. Docker Topology
+## 16. Docker Topology
 
 Baseline:
 
 - `api` service
 - `mysql` service
-
-Optional local service:
-
-- email capture/mock service for non-production environments
-
-## 18. Project Layout
-
-```text
-api/app/
-  main.py
-  routers/
-    heartbeat.py
-    users.py
-  schemas/
-    users.py
-    errors.py
-  services/
-    registration_service.py
-    activation_service.py
-    email_dispatcher.py
-  integrations/
-    email_provider_client.py
-  repositories/
-  security/
-    hashing.py
-    basic_auth.py
-  exceptions/
-    domain.py
-    handlers.py
-  db/
-    pool.py
-    migrations/
-      001_init.sql
-```
-
-## 19. Trade-offs and Upgrade Path
-
-Trade-off in baseline:
-
-- Simpler and faster to operate (no separate worker runtime).
-- Delivery is best-effort, not durable at-least-once.
-
-Upgrade path:
-
-- Introduce outbox + worker/queue for durable at-least-once dispatch when scale/guarantees require it.
-
-## 20. Implementation Roadmap
-
-1. Implement registration and activation endpoints with schema validation.
-2. Implement transactional SQL service logic (no ORM).
-3. Add password hashing and Basic Auth verification.
-4. Integrate provider HTTP client in API process.
-5. Add post-commit async dispatch trigger from registration and resend flows.
-6. Implement bounded retry/backoff + concurrency limits for provider calls.
-7. Set `sent_at` only after provider success.
-8. Add dispatch observability and incident/runbook guidance.
