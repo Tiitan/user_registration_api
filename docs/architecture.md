@@ -1,33 +1,44 @@
-# Architecture - Registration API
+# Architecture - Registration API (Direct Provider Send)
 
 ## 1. Purpose
 
-This document defines a production-ready architecture for a user Registration API with account activation.
+This document defines a production-oriented architecture for a user Registration API with account activation.
 
 Core capabilities:
 
 - Create a user account with email and password.
 - Generate a 4-digit activation code.
-- Deliver activation emails asynchronously outside request flow.
+- Send activation emails through a third-party HTTP provider.
 - Activate account using Basic Auth and activation code.
 - Enforce a 60-second activation window starting when email delivery succeeds.
+
+Delivery model:
+
+- The API commits registration state first, then dispatches email asynchronously in-process.
+- Delivery is best-effort (no durable delivery queue in baseline architecture).
 
 ## 2. Principles and Constraints
 
 - Language: Python.
 - Framework: FastAPI.
-- Data access: no ORM; explicit SQL in repository layer.
+- Data access: no ORM; explicit SQL.
 - Database: MySQL 8.4.
-- Email provider is a third-party service exposed over HTTP API.
-- Service runs in containers with operational runbooks.
+- Email provider: third-party HTTP API.
+- Service runs in containers.
 
 Design principles:
 
 - Strong separation of concerns.
-- Reliable failure handling and retry behavior.
-- Secure credential and code handling.
-- Clear observability and operability.
-- Deterministic business behavior under concurrency.
+- Deterministic business rules under concurrency.
+- Secure credential handling.
+- Fast request path with bounded external-call impact.
+- Explicit trade-offs around delivery guarantees.
+
+Resilience baseline:
+
+- Short provider timeout.
+- Bounded retries for retryable failures.
+- No durable recovery queue in baseline.
 
 ## 3. High-Level Architecture
 
@@ -36,48 +47,37 @@ Design principles:
    |
    | HTTPS/JSON + Basic Auth
    v
-[FastAPI API Service]
+[FastAPI API Service] -----> [Email Provider HTTP API]
    |
    v
-[MySQL] (users, activation_codes, outbox_events)
-   |
-   | polling + claim loop
-   v
-[Email Worker Service]
-   |
-   v
-[Email Provider HTTP API]
+[MySQL] (users, activation_codes)
 ```
 
-The API commits business state in MySQL, then a separate worker polls outbox events and sends email asynchronously.
+The API persists business state in MySQL, then triggers asynchronous post-commit email dispatch from within the API process.
 
 ## 4. Runtime Components
 
-- API service (`FastAPI`): exposes endpoints, validates input, runs domain logic, writes DB state.
-- MySQL: system of record for users, activation codes, and outbox events.
-- Email worker: polls and claims outbox events, calls provider, applies retry/backoff.
-- Cleanup cron worker: runs periodic cleanup jobs (`registration_cleanup` every hour).
+- API service (`FastAPI`): endpoints, validation, domain orchestration, DB writes, post-commit email dispatch.
+- MySQL: system of record for users and activation codes.
+- Email provider: external HTTP dependency used by API dispatch logic.
 
 ## 5. Internal Service Modules
 
 ```text
 api/app/
-  main.py                  -> app creation, lifespan, DI wiring
-  routers/                 -> HTTP endpoints
-  schemas/                 -> request/response validation
-  services/                -> use-case orchestration
-  repositories/            -> SQL access layer
-  security/                -> hashing + Basic Auth helpers
-  messaging/               -> outbox write abstractions
-  exceptions/              -> domain errors + HTTP mapping
-  db/                      -> pool, transaction helpers, migrations
-worker/
-  main.py                  -> worker bootstrap
-  outbox_poller.py         -> polling + claiming loop
-  email_provider_client.py -> provider integration
-  retry.py                 -> backoff + dead-letter policy
-  cleanup_cron.py          -> schedule and run cleanup jobs
-  cleanup_tasks.py         -> SQL cleanup statements
+  main.py                    -> app creation, lifespan, DI wiring
+  routers/                   -> HTTP endpoints
+  schemas/                   -> request/response validation
+  services/
+    registration_service.py  -> registration + post-commit dispatch trigger
+    activation_service.py    -> activation use case
+    email_dispatcher.py      -> retries/backoff/concurrency-limited dispatch
+  integrations/
+    email_provider_client.py -> HTTP provider integration
+  repositories/              -> SQL access layer
+  security/                  -> hashing + Basic Auth helpers
+  exceptions/                -> domain errors + HTTP mapping
+  db/                        -> pool, transaction helpers, migrations
 ```
 
 ## 6. Data Model
@@ -106,36 +106,18 @@ Constraints/indexes:
 - `FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE`
 - `INDEX(user_id, created_at DESC)`
 
-Rule:
+Rules:
 
-- `sent_at` is set by worker only after provider confirms email delivery.
-- Activation code is stored as plaintext by design to keep implementation simple.
-
-## 6.3 `outbox_events`
-
-- `id` BIGINT PK AUTO_INCREMENT
-- `event_type` VARCHAR(100) NOT NULL
-- `payload` JSON NOT NULL
-- `status` ENUM('PENDING','PROCESSING','DONE','FAILED') NOT NULL DEFAULT 'PENDING'
-- `attempts` INT NOT NULL DEFAULT 0
-- `next_attempt_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-- `last_error` VARCHAR(500) NULL
-- `locked_by` VARCHAR(100) NULL
-- `locked_at` DATETIME(6) NULL
-- `created_at` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
-- `processed_at` DATETIME(6) NULL
-
-Indexes:
-
-- `INDEX(status, next_attempt_at)`
-- `INDEX(locked_at)`
+- `sent_at` is set only after provider send success.
+- Activation validity is derived from `sent_at + 60s`.
+- Activation code is stored as plaintext by design for this scope.
 
 ## 7. API Contract
 
 ## 7.1 `POST /v1/users`
 
-Creates a pending account and schedules asynchronous activation email delivery.
-If the user is pending, override the password, generate and send a new code.
+Creates a pending account and triggers asynchronous activation email delivery.
+If the user is pending, overwrite password, generate a new code, and trigger new delivery.
 
 Request:
 
@@ -148,23 +130,18 @@ Request:
 
 Responses:
 
-- `201 Created` account created.
-- `409 Conflict` email already exists.
+- `201 Created` account created/reset.
+- `409 Conflict` email already belongs to active account.
 - `422 Unprocessable Entity` invalid payload.
 
-Example response:
+Behavior note:
 
-```json
-{
-  "id": 123,
-  "email": "user@example.com",
-  "status": "PENDING"
-}
-```
+- Response is not blocked on confirmed provider delivery.
 
 ## 7.2 `POST /v1/users/activate`
+
 Activate the user.
-If the code is expired, generate and send a new code.
+If code is expired, generate/send a new code.
 
 Requires `Authorization: Basic base64(email:password)`.
 
@@ -191,7 +168,7 @@ Activation eligibility:
 - A matching code exists.
 - `sent_at` is set.
 - Current time is `<= sent_at + 60s`.
-- Code was not previously used.
+- Code has not been used.
 
 ## 7.3 `GET /heartbeat`
 
@@ -204,21 +181,20 @@ Activation eligibility:
 ```text
 Client -> API: POST /v1/users
 API -> Service: register_user
-Service -> DB (tx): insert users + activation_codes(sent_at NULL) + outbox_events
-Service -> API: created
+Service -> DB (tx): upsert pending user + insert activation_codes(sent_at NULL)
+Service -> DB: commit
+Service -> Dispatcher: schedule async send task (post-commit)
 API -> Client: 201
 
-Worker -> DB: select claimable outbox rows (status=PENDING and next_attempt_at<=NOW)
-Worker -> Email Provider: send activation email
-Worker -> DB (tx):
-  - set activation_codes.sent_at = NOW
-  - mark outbox event DONE
+Dispatcher -> Email Provider: send activation email (retry policy)
+Dispatcher -> DB: set activation_codes.sent_at = NOW on success
+Dispatcher -> Logs/Metrics: record final failure after retries
 ```
 
 Key behavior:
 
-- User creation never waits for external provider response.
-- 60-second window starts when delivery succeeds.
+- User creation stays fast and decoupled from provider latency.
+- The 60-second activation window starts only when `sent_at` is written.
 
 ## 8.2 Activation
 
@@ -226,50 +202,51 @@ Key behavior:
 Client -> API: POST /v1/users/activate + Basic Auth
 API -> Security: verify credentials
 API -> Service: activate_user
-Service -> DB (tx): lock user + most recent valid code
-Service -> DB (tx): verify code, sent_at, expiry, then set user ACTIVE and code used
+Service -> DB (tx): lock user + latest valid code
+Service -> DB (tx): verify code, sent_at, expiry, then set ACTIVE + used_at
 Service -> API: success
 API -> Client: 200
 ```
 
-## 9. Polling Strategy
+## 9. Dispatch Strategy
 
-Recommended baseline values:
+Recommended defaults:
 
-- Poll interval: 5 second.
-- Batch size: 50 events per cycle.
-- Claim timeout recovery: reclaim `PROCESSING` rows with stale `locked_at`.
+- Provider timeout: 2-3 seconds.
+- Max retries: 2 additional attempts (3 total tries).
+- Backoff: exponential with bounded jitter.
+- Concurrency control: semaphore cap for in-process dispatch workers.
 
-Claiming pattern:
+Retryable conditions:
 
-- Use transaction.
-- Select eligible rows with lock (`FOR UPDATE SKIP LOCKED` where supported).
-- Transition to `PROCESSING` with `locked_by` and `locked_at`.
-- Commit claim before calling provider.
+- Transport errors/timeouts.
+- Provider status: `408`, `425`, `429`, `5xx`.
 
-This is reactive enough for the 60-second activation window because countdown starts at send success, not account creation.
+Non-retryable conditions:
+
+- Other `4xx` errors.
+
+Known limitation (best-effort):
+
+- If process crashes after DB commit and before successful send completion, delivery attempt may be lost.
 
 ## 10. Security
 
-- Password storage: `argon2id`
-
-- Activation code: plaintext
-
-- Authentication: Basic Auth (for activation endpoint).
-
+- Password storage: `argon2id`.
+- Activation code: plaintext in DB for this project scope.
+- Authentication: Basic Auth for activation endpoint.
 - Input validation:
-- `EmailStr` for email.
-- Password policy (minimum length and complexity).
-- Code format regex: `^\d{4}$`.
+  - email: `EmailStr`
+  - password complexity policy
+  - activation code regex: `^\d{4}$`
 
 ## 11. Consistency and Concurrency
 
 - Unique email enforced by DB unique constraint.
-- Activation uses transaction + row locking (`SELECT ... FOR UPDATE`).
-- Status transition guarded in transaction (`PENDING` -> `ACTIVE` only once).
-- Code validation always targets most recent unused code with non-null `sent_at`.
-- Failed checks atomically increment `attempt_count`.
-- Activation is blocked once `attempt_count` reaches configured limit.
+- Registration and activation use DB transactions with row locking where needed.
+- Status transition guarded (`PENDING -> ACTIVE` once).
+- Code validation targets latest delivered, unused code.
+- Failed activation checks atomically increment `attempt_count`.
 
 ## 12. Error Model
 
@@ -284,15 +261,10 @@ Domain errors:
 - `ActivationCodeMismatchError`
 - `ActivationCodeAttemptsExceededError`
 
-FastAPI exception handlers map domain errors to stable HTTP responses:
+Delivery errors:
 
-```json
-{
-  "error": "activation_code_expired",
-  "message": "Activation code expired",
-  "details": null
-}
-```
+- Provider dispatch errors are operational concerns.
+- They are logged/metriced, not directly exposed as user-facing registration failures in baseline mode.
 
 ## 13. Dependency Injection and Lifespan
 
@@ -300,52 +272,50 @@ Lifespan-managed resources:
 
 - MySQL connection pool.
 - Shared HTTP client for provider calls.
+- Email dispatcher runtime dependencies (retry policy, concurrency limiter).
 
-`Depends` wiring:
+`Depends` wiring baseline:
 
 - `get_db_pool`
-- `get_user_repository`
-- `get_activation_code_repository`
-- `get_outbox_repository`
 - `get_registration_service`
 - `get_activation_service`
+- `get_email_dispatcher`
+- `get_email_provider_client`
 
 ## 14. Observability
 
 - Structured logs with request/correlation IDs.
-- Domain event logging for registration and activation lifecycle.
-- Worker metrics:
-- outbox depth
-- poll cycle duration
-- processing latency
-- retry count
-- failed event count
-- provider latency and error rates
+- Domain event logs for registration and activation lifecycle.
+- Dispatch metrics:
+  - dispatch attempts
+  - dispatch successes
+  - dispatch failures (terminal)
+  - provider latency
+  - provider error rate
+  - undelivered activation code count (`sent_at IS NULL`)
 
 ## 15. SQL Migration Strategy
 
 - Keep explicit SQL migrations in `api/app/db/migrations/`.
 - Apply migrations through a dedicated migration command/container.
-- Monotonic versioning, e.g., `001_init.sql`, `002_outbox.sql`.
+- Monotonic versioning, e.g., `001_init.sql`, `002_*.sql`.
 
-## 16. Periodic cleanup Cron Jobs
+## 16. Periodic Cleanup
 
 - `registration_cleanup` every hour:
-  - Delete abandoned pending users 
-  - Delete activation_codes
-  - retention window (24 hours)
+  - delete abandoned pending users older than retention window (e.g., 24h)
+  - delete stale activation codes according to retention policy
 
 ## 17. Docker Topology
 
 Baseline:
 
-- `api` service.
-- `mysql` service.
-- `worker` service.
+- `api` service
+- `mysql` service
 
 Optional local service:
 
-- email capture service for non-production environments.
+- email capture/mock service for non-production environments
 
 ## 18. Project Layout
 
@@ -361,15 +331,13 @@ api/app/
   services/
     registration_service.py
     activation_service.py
+    email_dispatcher.py
+  integrations/
+    email_provider_client.py
   repositories/
-    user_repository.py
-    activation_code_repository.py
-    outbox_repository.py
   security/
     hashing.py
     basic_auth.py
-  messaging/
-    outbox_writer.py
   exceptions/
     domain.py
     handlers.py
@@ -377,31 +345,26 @@ api/app/
     pool.py
     migrations/
       001_init.sql
-      002_outbox.sql
-worker/
-  main.py
-  outbox_poller.py
-  email_provider_client.py
-  retry.py
-  cleanup_cron.py
-  cleanup_tasks.py
 ```
 
 ## 19. Trade-offs and Upgrade Path
 
-- Polling outbox is simple and operationally lightweight for this scope.
-- Polling may add small dispatch delay; acceptable because activation TTL begins on send success.
-- CDC-based event propagation is the next upgrade for lower latency and higher throughput.
-- Basic Auth is simple and requirement-compatible; token-based auth can be introduced later.
+Trade-off in baseline:
+
+- Simpler and faster to operate (no separate worker runtime).
+- Delivery is best-effort, not durable at-least-once.
+
+Upgrade path:
+
+- Introduce outbox + worker/queue for durable at-least-once dispatch when scale/guarantees require it.
 
 ## 20. Implementation Roadmap
 
-1. Add user and activation endpoints with schema validation.
-2. Implement repositories and transactional service logic in raw SQL.
-3. Add secure hashing for passwords.
-4. Create `outbox_events` table and worker polling/claim loop.
-5. Set `sent_at` only after provider send success and derive validity as `sent_at + 60s`.
-6. Add provider adapter with retry/backoff and dead-letter policy.
-7. Implement centralized exception handling and error schema.
-8. Add operational dashboards/alerts for API and worker.
-9. Publish runbooks for startup, rollback, and incident handling.
+1. Implement registration and activation endpoints with schema validation.
+2. Implement transactional SQL service logic (no ORM).
+3. Add password hashing and Basic Auth verification.
+4. Integrate provider HTTP client in API process.
+5. Add post-commit async dispatch trigger from registration and resend flows.
+6. Implement bounded retry/backoff + concurrency limits for provider calls.
+7. Set `sent_at` only after provider success.
+8. Add dispatch observability and incident/runbook guidance.

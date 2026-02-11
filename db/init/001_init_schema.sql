@@ -20,19 +20,3 @@ CREATE TABLE IF NOT EXISTS activation_codes (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_activation_codes_user_created (user_id, created_at)
 );
-
-CREATE TABLE IF NOT EXISTS outbox_events (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  event_type VARCHAR(100) NOT NULL,
-  payload JSON NOT NULL,
-  status ENUM('PENDING', 'PROCESSING', 'DONE', 'FAILED') NOT NULL DEFAULT 'PENDING',
-  attempts INT NOT NULL DEFAULT 0,
-  next_attempt_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  last_error VARCHAR(500) NULL,
-  locked_by VARCHAR(100) NULL,
-  locked_at DATETIME(6) NULL,
-  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-  processed_at DATETIME(6) NULL,
-  INDEX idx_outbox_status_next_attempt (status, next_attempt_at),
-  INDEX idx_outbox_locked_at (locked_at)
-);

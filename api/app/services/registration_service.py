@@ -1,4 +1,3 @@
-import json
 import logging
 import secrets
 
@@ -26,65 +25,23 @@ class RegistrationService:
             try:
                 await connection.begin()
                 async with connection.cursor(DictCursor) as cursor:
-                    await cursor.execute(
-                        """
-                        SELECT id, status
-                        FROM users
-                        WHERE email = %s
-                        FOR UPDATE
-                        """,
-                        (email,),
-                    )
+                    await cursor.execute("SELECT id, status FROM users WHERE email = %s FOR UPDATE", (email,))
                     existing_user = await cursor.fetchone()
 
                     if existing_user is None:
-                        await cursor.execute(
-                            """
-                            INSERT INTO users (email, password_hash, status)
-                            VALUES (%s, %s, 'PENDING')
-                            """,
-                            (email, password_hash),
-                        )
+                        await cursor.execute("INSERT INTO users (email, password_hash, status) VALUES (%s, %s, 'PENDING')",
+                            (email, password_hash))
                         user_id = int(cursor.lastrowid)
                     else:
                         user_id = int(existing_user["id"])
                         if existing_user["status"] == "ACTIVE":
                             logger.warning("Registration rejected: email=%s is already active", email)
                             raise EmailAlreadyExistsError()
-                        await cursor.execute(
-                            """
-                            UPDATE users
-                            SET password_hash = %s
-                            WHERE id = %s AND status = 'PENDING'
-                            """,
-                            (password_hash, user_id),
-                        )
+                        await cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s AND status = 'PENDING'",
+                            (password_hash, user_id))
 
-                    await cursor.execute(
-                        """
-                        INSERT INTO activation_codes (user_id, code)
-                        VALUES (%s, %s)
-                        """,
-                        (user_id, code),
-                    )
+                    await cursor.execute("INSERT INTO activation_codes (user_id, code) VALUES (%s, %s)", (user_id, code))
                     activation_code_id = int(cursor.lastrowid)
-
-                    outbox_payload = json.dumps(
-                        {
-                            "user_id": user_id,
-                            "email": email,
-                            "activation_code_id": activation_code_id,
-                            "code": code,
-                        }
-                    )
-
-                    await cursor.execute(
-                        """
-                        INSERT INTO outbox_events (event_type, payload, status, next_attempt_at)
-                        VALUES ('activation_code_email_requested', CAST(%s AS JSON), 'PENDING', CURRENT_TIMESTAMP(6))
-                        """,
-                        (outbox_payload,),
-                    )
                 await connection.commit()
                 logger.info("Registration committed for email=%s user_id=%s", email, user_id)
             except Exception:
