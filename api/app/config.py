@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     mysql_pool_maxsize: int = 10
     mysql_connect_retries: int = 3
     mysql_retry_delay_seconds: float = 1.0
+    email_provider_max_retries: int = 3
+    email_provider_retry_base_delay_seconds: float = 0.2
+    email_provider_retry_max_delay_seconds: float = 2.0
+    email_dispatch_max_concurrency: int = 50
 
     model_config = SettingsConfigDict(
         env_file=".env",

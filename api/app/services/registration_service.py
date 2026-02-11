@@ -7,13 +7,15 @@ from asyncmy.cursors import DictCursor
 
 from api.app.exceptions.domain import EmailAlreadyExistsError
 from api.app.schemas.users import UserResponse
+from api.app.services.email_dispatcher import EmailDispatcher
 
 logger = logging.getLogger(__name__)
 
 
 class RegistrationService:
-    def __init__(self, db_pool: asyncmy.Pool) -> None:
+    def __init__(self, db_pool: asyncmy.Pool, email_dispatcher: EmailDispatcher) -> None:
         self._db_pool = db_pool
+        self._email_dispatcher = email_dispatcher
         self.password_hasher = PasswordHasher()
 
     async def register_user(self, *, email: str, password: str) -> UserResponse:
@@ -48,5 +50,12 @@ class RegistrationService:
                 logger.exception("Registration transaction failed for email=%s", email)
                 await connection.rollback()
                 raise
+
+        self._email_dispatcher.dispatch_activation_email(
+            user_id=user_id,
+            activation_code_id=activation_code_id,
+            recipient_email=email,
+            code=code,
+        )
 
         return UserResponse(id=user_id, email=email, status="PENDING")
