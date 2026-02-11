@@ -1,14 +1,10 @@
-import logging
-
 from fastapi import FastAPI
 
 from api.app.db.lifespan import lifespan
+from api.app.logging_config import configure_logging
 from api.app.routers import heartbeat_router, users_router
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
-)
+configure_logging()
 
 
 app = FastAPI(

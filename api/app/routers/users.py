@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from api.app.dependencies import get_registration_service
@@ -6,6 +8,7 @@ from api.app.schemas.users import CreateUserRequest, UserResponse
 from api.app.services.registration_service import RegistrationService
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
+logger = logging.getLogger(__name__)
 
 
 @router.post(
@@ -34,9 +37,13 @@ router = APIRouter(prefix="/v1/users", tags=["users"])
     },
 )
 async def create_user(payload: CreateUserRequest, service: RegistrationService = Depends(get_registration_service)) -> UserResponse:
+    logger.info("POST /v1/users requested for email=%s", payload.email)
     try:
-        return await service.register_user(email=payload.email, password=payload.password)
+        user = await service.register_user(email=payload.email, password=payload.password)
+        logger.info("POST /v1/users succeeded for email=%s user_id=%s", payload.email, user.id)
+        return user
     except EmailAlreadyExistsError as exc:
+        logger.warning("POST /v1/users conflict for email=%s", payload.email)
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={

@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    log_level: str = "INFO"
     mysql_host: str = "mysql"
     mysql_port: int = 3306
     mysql_user: str = "app"
