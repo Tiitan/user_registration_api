@@ -256,7 +256,6 @@ Domain errors:
 - `InvalidCredentialsError`
 - `UserNotFoundError`
 - `AccountAlreadyActiveError`
-- `ActivationCodeNotDeliveredError`
 - `ActivationCodeExpiredError`
 - `ActivationCodeMismatchError`
 - `ActivationCodeAttemptsExceededError`

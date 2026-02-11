@@ -9,7 +9,6 @@ from api.app.exceptions.domain import (
     ActivationCodeAttemptsExceededError,
     ActivationCodeExpiredError,
     ActivationCodeMismatchError,
-    ActivationCodeNotDeliveredError,
     EmailAlreadyExistsError,
     InvalidCredentialsError,
     UserNotFoundError,
@@ -78,7 +77,7 @@ async def create_user(payload: CreateUserRequest, service: RegistrationService =
     summary="Activate a user",
     description=(
         "Activate account using Basic Auth credentials and a 4-digit code. "
-        "Activation requires a delivered code (`sent_at` set) and a non-expired 60-second window."
+        "Activation requires a non-expired 60-second window when `sent_at` is available."
     ),
     responses={
         200: {
@@ -86,7 +85,7 @@ async def create_user(payload: CreateUserRequest, service: RegistrationService =
             "content": {"application/json": {"example": {"id": 123, "email": "user@example.com", "status": "ACTIVE"}}},
         },
         400: {
-            "description": "Invalid code, code not delivered, or attempts exceeded",
+            "description": "Invalid code or attempts exceeded",
             "model": ErrorResponse,
             "content": {
                 "application/json": {
@@ -94,16 +93,6 @@ async def create_user(payload: CreateUserRequest, service: RegistrationService =
                         "mismatch": {
                             "summary": "Code mismatch",
                             "value": {"detail": {"error": "activation_code_mismatch", "message": "Invalid activation code", "details": None}},
-                        },
-                        "not_delivered": {
-                            "summary": "Code not delivered yet",
-                            "value": {
-                                "detail": {
-                                    "error": "activation_code_not_delivered",
-                                    "message": "Activation code has not been delivered yet",
-                                    "details": None,
-                                }
-                            },
                         },
                         "attempts_exceeded": {
                             "summary": "Attempts exceeded",
@@ -204,11 +193,6 @@ async def activate_user(payload: ActivateUserRequest, credentials: HTTPBasicCred
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={"error": "account_already_active", "message": "Account already active", "details": None},
-        ) from exc
-    except ActivationCodeNotDeliveredError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "activation_code_not_delivered", "message": "Activation code has not been delivered yet", "details": None},
         ) from exc
     except ActivationCodeExpiredError as exc:
         raise HTTPException(

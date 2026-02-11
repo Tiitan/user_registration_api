@@ -7,7 +7,6 @@ from api.app.exceptions.domain import (
     ActivationCodeAttemptsExceededError,
     ActivationCodeExpiredError,
     ActivationCodeMismatchError,
-    ActivationCodeNotDeliveredError,
     InvalidCredentialsError,
     UserNotFoundError,
 )
@@ -92,19 +91,6 @@ def test_activate_user_returns_409_when_account_is_already_active(monkeypatch) -
 
     assert response.status_code == 409
     assert response.json()["detail"]["error"] == "account_already_active"
-
-
-def test_activate_user_returns_400_when_code_not_delivered(monkeypatch) -> None:
-    _patch_pool(monkeypatch)
-    main.app.dependency_overrides[get_activation_service] = lambda: _ErrorActivationService(ActivationCodeNotDeliveredError())
-
-    with TestClient(main.app) as client:
-        response = client.post("/v1/users/activate", auth=("user@example.com", "StrongPass123"), json={"code": "1234"})
-
-    main.app.dependency_overrides.clear()
-
-    assert response.status_code == 400
-    assert response.json()["detail"]["error"] == "activation_code_not_delivered"
 
 
 def test_activate_user_returns_410_when_code_expired(monkeypatch) -> None:

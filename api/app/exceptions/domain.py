@@ -14,10 +14,6 @@ class AccountAlreadyActiveError(Exception):
     pass
 
 
-class ActivationCodeNotDeliveredError(Exception):
-    pass
-
-
 class ActivationCodeExpiredError(Exception):
     pass
 
