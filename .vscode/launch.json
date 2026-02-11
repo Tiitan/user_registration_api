@@ -1,0 +1,48 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run local",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "preLaunchTask": "docker:mysql:up",
+      "args": [
+        "api.app.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "MYSQL_HOST": "127.0.0.1",
+        "MYSQL_PORT": "3306",
+        "MYSQL_DATABASE": "user_registration",
+        "MYSQL_USER": "app",
+        "MYSQL_PASSWORD": "app"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "Build & run docker",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "docker compose up --build --force-recreate"
+    },
+    {
+      "name": "Tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": [
+        "-q"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

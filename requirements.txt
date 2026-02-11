@@ -1,0 +1,6 @@
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+httpx==0.28.1
+asyncmy==0.2.10
+cryptography==45.0.7
+argon2-cffi==25.1.0
