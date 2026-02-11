@@ -15,7 +15,10 @@ def test_heartbeat_returns_ok(monkeypatch) -> None:
     async def _fake_create_mysql_pool_with_retry() -> _FakePool:
         return _FakePool()
 
-    monkeypatch.setattr(main, "_create_mysql_pool_with_retry", _fake_create_mysql_pool_with_retry)
+    monkeypatch.setattr(
+        "api.app.db.lifespan.create_mysql_pool_with_retry",
+        _fake_create_mysql_pool_with_retry,
+    )
 
     with TestClient(main.app) as client:
         response = client.get("/heartbeat")
