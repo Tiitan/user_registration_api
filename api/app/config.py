@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     email_provider_retry_base_delay_seconds: float = 0.2
     email_provider_retry_max_delay_seconds: float = 2.0
     email_dispatch_max_concurrency: int = 50
+    activation_code_ttl_seconds: int = 60
+    activation_code_max_attempts: int = 5
 
     model_config = SettingsConfigDict(
         env_file=".env",

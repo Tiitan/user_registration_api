@@ -3,6 +3,7 @@ from typing import cast
 import asyncmy
 from fastapi import Request
 
+from api.app.services.activation_service import ActivationService
 from api.app.services.registration_service import RegistrationService
 
 
@@ -12,3 +13,7 @@ def get_db_pool(request: Request) -> asyncmy.Pool:
 
 def get_registration_service(request: Request) -> RegistrationService:
     return cast(RegistrationService, request.app.state.registration_service)
+
+
+def get_activation_service(request: Request) -> ActivationService:
+    return cast(ActivationService, request.app.state.activation_service)
