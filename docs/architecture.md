@@ -135,6 +135,7 @@ Indexes:
 ## 7.1 `POST /v1/users`
 
 Creates a pending account and schedules asynchronous activation email delivery.
+If the user is pending, override the password, generate and send a new code.
 
 Request:
 
@@ -162,6 +163,8 @@ Example response:
 ```
 
 ## 7.2 `POST /v1/users/activate`
+Activate the user.
+If the code is expired, generate and send a new code.
 
 Requires `Authorization: Basic base64(email:password)`.
 
