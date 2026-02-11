@@ -1,5 +1,6 @@
 import logging
 import secrets
+from datetime import datetime, timedelta, timezone
 
 import asyncmy
 from argon2 import PasswordHasher
@@ -33,7 +34,9 @@ class ActivationService:
     async def activate_user(self, *, email: str, password: str, code: str) -> ActivatedUserResponse:
         logger.info("Starting activation transaction for email=%s", email)
         resend_info: tuple[int, int, str, str] | None = None
-        activation_expired = False
+        deferred_error: Exception | None = None
+        user_id: int | None = None
+        user_email: str | None = None
 
         async with self._db_pool.acquire() as connection:
             try:
@@ -50,7 +53,14 @@ class ActivationService:
                     if user_row["status"] == "ACTIVE":
                         raise AccountAlreadyActiveError()
 
-                    await cursor.execute("SELECT id, code, sent_at, attempt_count, (CURRENT_TIMESTAMP(6) > DATE_ADD(sent_at, INTERVAL %s SECOND)) AS is_expired FROM activation_codes WHERE user_id = %s AND used_at IS NULL ORDER BY created_at DESC, id DESC LIMIT 1 FOR UPDATE", (self._activation_code_ttl_seconds, user_id))
+                    await cursor.execute(
+                        "SELECT id, code, sent_at, attempt_count "
+                        "FROM activation_codes "
+                        "WHERE user_id = %s AND used_at IS NULL "
+                        "ORDER BY created_at DESC, id DESC "
+                        "LIMIT 1 FOR UPDATE",
+                        (user_id,),
+                    )
                     code_row = await cursor.fetchone()
                     if code_row is None:
                         raise ActivationCodeMismatchError()
@@ -60,28 +70,26 @@ class ActivationService:
                     if attempt_count >= self._activation_code_max_attempts:
                         raise ActivationCodeAttemptsExceededError()
 
-                    if code_row["sent_at"] is not None and int(code_row["is_expired"]) == 1:
+                    if self._is_code_expired(code_row["sent_at"]):
                         new_code = f"{secrets.randbelow(10_000):04d}"
                         await cursor.execute("INSERT INTO activation_codes (user_id, code) VALUES (%s, %s)", (user_id, new_code))
                         new_activation_code_id = int(cursor.lastrowid)
                         resend_info = (user_id, new_activation_code_id, user_email, new_code)
-                        raise ActivationCodeExpiredError()
+                        deferred_error = ActivationCodeExpiredError()
 
-                    if str(code_row["code"]) != code:
+                    if deferred_error is None and str(code_row["code"]) != code:
                         await cursor.execute("UPDATE activation_codes SET attempt_count = attempt_count + 1 WHERE id = %s", (activation_code_id,))
                         if attempt_count + 1 >= self._activation_code_max_attempts:
-                            raise ActivationCodeAttemptsExceededError()
-                        raise ActivationCodeMismatchError()
+                            deferred_error = ActivationCodeAttemptsExceededError()
+                        else:
+                            deferred_error = ActivationCodeMismatchError()
 
-                    await cursor.execute("UPDATE activation_codes SET used_at = CURRENT_TIMESTAMP(6) WHERE id = %s AND used_at IS NULL", (activation_code_id,))
-                    await cursor.execute("UPDATE users SET status = 'ACTIVE', activated_at = CURRENT_TIMESTAMP(6) WHERE id = %s AND status = 'PENDING'", (user_id,))
+                    if deferred_error is None:
+                        await cursor.execute("UPDATE activation_codes SET used_at = CURRENT_TIMESTAMP(6) WHERE id = %s AND used_at IS NULL", (activation_code_id,))
+                        await cursor.execute("UPDATE users SET status = 'ACTIVE', activated_at = CURRENT_TIMESTAMP(6) WHERE id = %s AND status = 'PENDING'", (user_id,))
                 await connection.commit()
             except Exception as error:
-                if isinstance(error, ActivationCodeExpiredError):
-                    await connection.commit()
-                    activation_expired = True
-                else:
-                    await connection.rollback()
+                await connection.rollback()
                 logger.exception("Activation transaction failed for email=%s, error:%s", email, error)
                 raise
 
@@ -93,9 +101,11 @@ class ActivationService:
                 recipient_email=user_email,
                 code=new_code,
             )
-        if activation_expired:
-            raise ActivationCodeExpiredError()
+        if deferred_error is not None:
+            raise deferred_error
 
+        assert user_id is not None
+        assert user_email is not None
         logger.info("Activation committed for email=%s user_id=%s", email, user_id)
         return ActivatedUserResponse(id=user_id, email=user_email, status="ACTIVE")
 
@@ -104,3 +114,18 @@ class ActivationService:
             self._password_hasher.verify(password_hash, password)
         except (VerifyMismatchError, VerificationError):
             raise InvalidCredentialsError()
+
+    def _is_code_expired(self, sent_at: datetime | None) -> bool:
+        if sent_at is None:
+            return False
+        sent_at_utc = self._as_utc(sent_at)
+        now_utc = self._utc_now()
+        return now_utc > sent_at_utc + timedelta(seconds=self._activation_code_ttl_seconds)
+
+    def _as_utc(self, value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    def _utc_now(self) -> datetime:
+        return datetime.now(timezone.utc)
