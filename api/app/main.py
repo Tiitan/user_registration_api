@@ -6,7 +6,7 @@ from api.app.exceptions.handlers import register_exception_handlers
 from api.app.lifespan import lifespan
 from api.app.logging_config import configure_logging
 from api.app.observability import RequestContextMiddleware
-from api.app.routers import heartbeat_router, users_router
+from api.app.routers import heartbeat_router, observability_router, users_router
 
 configure_logging()
 
@@ -33,3 +33,4 @@ register_exception_handlers(app)
 app.add_middleware(RequestContextMiddleware)
 app.include_router(users_router)
 app.include_router(heartbeat_router)
+app.include_router(observability_router)

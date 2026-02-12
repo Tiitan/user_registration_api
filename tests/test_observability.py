@@ -126,8 +126,22 @@ def test_dispatch_metrics_terminal_failure_tracks_provider_errors(client) -> Non
     assert metrics.get_counter("dispatch_attempts_total", tags=tags) == 1.0
     assert metrics.get_counter("dispatch_successes_total", tags=tags) == 0.0
     assert metrics.get_counter("dispatch_terminal_failures_total", tags=tags) == 1.0
-    assert metrics.get_counter(
-        "provider_errors_total",
-        tags={"provider": "mock_email_provider", "error_type": "RuntimeError"},
-    ) == 1.0
+    assert metrics.get_counter("provider_errors_total", tags={"provider": "mock_email_provider", "error_type": "RuntimeError"}) == 1.0
     assert metrics.get_gauge("activation_codes_undelivered") == 1.0
+
+
+def test_metrics_endpoint_exports_dispatch_metrics(client) -> None:
+    """Exports dispatcher metrics in Prometheus exposition format."""
+    metrics = client.app.state.metrics
+    assert isinstance(metrics, InMemoryMetricsRecorder)
+    metrics.reset()
+
+    response = client.post("/v1/users", json={"email": "scrape@example.com", "password": "StrongPass123"})
+    assert response.status_code == 201
+    client.app.state.email_dispatcher.wait_until_idle(timeout=2.0)
+
+    scrape = client.get("/metrics")
+    assert scrape.status_code == 200
+    assert 'dispatch_attempts_total{provider="mock_email_provider"} 1.0' in scrape.text
+    assert 'dispatch_successes_total{provider="mock_email_provider"} 1.0' in scrape.text
+    assert 'provider_latency_ms_count{provider="mock_email_provider"} 1' in scrape.text

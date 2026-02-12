@@ -116,3 +116,18 @@ class InMemoryMetricsRecorder:
             self._counters.clear()
             self._gauges.clear()
             self._histograms.clear()
+
+    def snapshot_counters(self) -> dict[MetricKey, float]:
+        """Return a copy of all counters."""
+        with self._lock:
+            return dict(self._counters)
+
+    def snapshot_gauges(self) -> dict[MetricKey, float]:
+        """Return a copy of all gauges."""
+        with self._lock:
+            return dict(self._gauges)
+
+    def snapshot_histograms(self) -> dict[MetricKey, HistogramSnapshot]:
+        """Return a copy of all histogram snapshots."""
+        with self._lock:
+            return dict(self._histograms)

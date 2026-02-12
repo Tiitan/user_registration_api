@@ -179,6 +179,15 @@ Activation eligibility:
 
 - `200 OK` with `{ "status": "ok" }`.
 
+## 7.4 `GET /metrics`
+
+Prometheus scrape endpoint exposing in-process instrumentation metrics.
+
+Response:
+
+- `200 OK` with Prometheus text exposition content type (`text/plain; version=...`).
+- Includes counters, gauges, and histogram `_count`/`_sum` lines for dispatch metrics.
+
 ## 8. Core Flows
 
 ## 8.1 Registration
@@ -305,6 +314,7 @@ Lifespan-managed resources:
   - `provider_errors_total`: counts provider-call errors by `provider` and `error_type`; supports failure taxonomy and derived error-rate calculations.
   - `activation_codes_undelivered` gauge (`sent_at IS NULL`): tracks current undelivered activation code count; indicates delivery backlog/risk exposure at a point in time.
   - `provider_error_rate` is derived externally as `provider_errors_total / dispatch_attempts_total`; it is not stored as a standalone metric.
+- Metrics are exposed for scraping at `GET /metrics`; no dashboarding/alerting implementation is part of this baseline scope.
 
 ## 15. Periodic Cleanup
 

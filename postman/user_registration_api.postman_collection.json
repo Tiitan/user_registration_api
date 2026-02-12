@@ -48,6 +48,47 @@
               }
             }
           ]
+        },
+        {
+          "name": "GET /metrics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/plain"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "metrics"
+              ]
+            },
+            "description": "Prometheus scrape endpoint for in-process dispatch and operational metrics."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('content-type is prometheus text format', function () {",
+                  "  var contentType = pm.response.headers.get('Content-Type') || '';",
+                  "  pm.expect(contentType).to.include('text/plain');",
+                  "  pm.expect(contentType).to.include('version=');",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
