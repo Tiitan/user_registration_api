@@ -5,6 +5,7 @@ from typing import cast
 import asyncmy
 from fastapi import Request
 
+from api.app.integrations import EmailProvider
 from api.app.observability.metrics import MetricsRecorder
 from api.app.services.activation_service import ActivationService
 from api.app.services.email_dispatcher import EmailDispatcher
@@ -19,6 +20,11 @@ def get_db_pool(request: Request) -> asyncmy.Pool:
 def get_email_dispatcher(request: Request) -> EmailDispatcher:
     """Return the email dispatcher from app state."""
     return cast(EmailDispatcher, request.app.state.email_dispatcher)
+
+
+def get_email_provider(request: Request) -> EmailProvider:
+    """Return the email provider from app state."""
+    return cast(EmailProvider, request.app.state.email_provider)
 
 
 def get_metrics_recorder(request: Request) -> MetricsRecorder:

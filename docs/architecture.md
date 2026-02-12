@@ -178,8 +178,18 @@ Activation eligibility:
 ## 7.3 `GET /heartbeat`
 
 - `200 OK` with `{ "status": "ok" }`.
+- Liveness probe only (process is running).
 
-## 7.4 `GET /metrics`
+## 7.4 `GET /readiness`
+
+- Readiness probe validating operational dependencies:
+- DB connectivity with a lightweight SQL check (`SELECT 1`).
+- Email provider connectivity with a provider probe call (mocked in baseline runtime).
+- `200 OK` with `{ "status": "ok" }` when both probes succeed.
+- `503 Service Unavailable` with `{ "detail": "database unavailable" }` when DB probe fails.
+- `503 Service Unavailable` with `{ "detail": "email provider unavailable" }` when provider probe fails.
+
+## 7.5 `GET /metrics`
 
 Prometheus scrape endpoint exposing in-process instrumentation metrics.
 

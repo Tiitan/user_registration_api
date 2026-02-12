@@ -108,14 +108,6 @@ This would also speed up the test suite significantly.
 
 **Recommendation:** Test dry-run mode and edge cases (no stale records, mixed states).
 
-### 13. Fragile test isolation
-
-The `clean_tables_for_users_integration_tests` fixture in `conftest.py` uses filename-based conditional logic. Renaming a test file would silently skip cleanup.
-
-**Recommendation:** Use pytest markers instead (`@pytest.mark.db_cleanup`).
-
----
-
 ## Observability
 
 ### 14. No request duration metric
@@ -133,12 +125,6 @@ HTTP 4xx/5xx responses are not counted.
 ---
 
 ## Documentation & Developer Experience
-
-### 16. No mention of auto-generated API docs
-
-FastAPI auto-generates OpenAPI docs at `/docs` and `/redoc`.
-
-**Recommendation:** Mention this in the README. Interviewers may look for it.
 
 ### 17. Postman collection maintenance
 

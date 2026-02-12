@@ -14,6 +14,10 @@ class EmailProvider(Protocol):
         """Send an activation email message."""
         ...
 
+    async def probe(self) -> None:
+        """Verify provider readiness for handling requests."""
+        ...
+
 
 class MockEmailProvider(EmailProvider):
     """In-process provider used for local/testing flows."""
@@ -22,4 +26,8 @@ class MockEmailProvider(EmailProvider):
         """Simulate email delivery without external calls."""
         logger.info("Simulated email provider HTTP request to=%s user_id=%s activation_code_id=%s code=%s",
             recipient_email, user_id, activation_code_id, code)
+        await asyncio.sleep(0)
+
+    async def probe(self) -> None:
+        """Simulate a provider readiness check."""
         await asyncio.sleep(0)

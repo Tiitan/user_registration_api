@@ -41,6 +41,7 @@ Services:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 - Heartbeat: `http://localhost:8000/heartbeat`
+- Readiness: `http://localhost:8000/readiness`
 - Metrics: `http://localhost:8000/metrics`
 - MySQL: `localhost:3306`
 
@@ -89,6 +90,13 @@ curl -X POST http://localhost:8000/v1/users/activate \
   - Can return `400`, `401`, `404`, `409`, `410`, `422` depending on domain state.
 - `GET /heartbeat`
   - Liveness probe (`{"status":"ok"}`).
+- `GET /readiness`
+  - Readiness probe with dependency checks:
+  - SQL connectivity check (`SELECT 1`)
+  - Email provider probe (mock provider readiness hook)
+  - Returns `200 {"status":"ok"}` when dependencies are reachable.
+  - Returns `503 {"detail":"database unavailable"}` when DB is not reachable.
+  - Returns `503 {"detail":"email provider unavailable"}` when provider probe fails.
 - `GET /metrics`
   - Prometheus text exposition for dispatch/latency/gauge metrics.
 
