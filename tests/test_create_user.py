@@ -1,4 +1,5 @@
 from argon2 import PasswordHasher
+import pytest
 
 def test_create_user_returns_201(client, db_helper) -> None:
     response = client.post("/v1/users", json={"email": "user@example.com", "password": "StrongPass123"})
@@ -39,6 +40,27 @@ def test_create_user_rejects_weak_password(client) -> None:
     detail = response.json()["detail"]
     assert isinstance(detail, list)
     assert detail[0]["loc"] == ["body", "password"]
+    assert detail[0]["type"] == "password_too_short"
+
+
+@pytest.mark.parametrize("password", ["12345678", "OnlyLetters"])
+def test_create_user_rejects_password_without_letter_or_digit(client, password: str) -> None:
+    response = client.post("/v1/users", json={"email": "user@example.com", "password": password})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list)
+    assert detail[0]["loc"] == ["body", "password"]
+    assert detail[0]["type"] == "password_not_complex_enough"
+
+
+def test_create_user_rejects_invalid_email_format(client) -> None:
+    response = client.post("/v1/users", json={"email": "not-an-email", "password": "StrongPass123"})
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert isinstance(detail, list)
+    assert detail[0]["loc"] == ["body", "email"]
 
 
 def test_create_user_resets_pending_user_and_creates_new_code(client, db_helper) -> None:

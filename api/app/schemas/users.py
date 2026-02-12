@@ -19,9 +19,7 @@ class CreateUserRequest(BaseModel):
     )
 
     email: EmailStr = Field(description="User email address")
-    password: str = Field(
-        description="Password with at least 8 characters, including one letter and one digit"
-    )
+    password: str = Field(description="Password with at least 8 characters, including one letter and one digit")
 
     @field_validator("password")
     @classmethod
@@ -29,10 +27,7 @@ class CreateUserRequest(BaseModel):
         if len(value) < 8:
             raise PydanticCustomError("password_too_short", "Password must be at least 8 characters long")
         if not PASSWORD_HAS_LETTER.search(value) or not PASSWORD_HAS_DIGIT.search(value):
-            raise PydanticCustomError(
-                "password_not_complex_enough",
-                "Password must contain at least one letter and one digit",
-            )
+            raise PydanticCustomError("password_not_complex_enough", "Password must contain at least one letter and one digit")
         return value
 
 
