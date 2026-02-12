@@ -6,6 +6,18 @@
       "type": "shell",
       "command": "docker compose up -d mysql",
       "problemMatcher": []
+    },
+    {
+      "label": "quality:test:all",
+      "type": "process",
+      "command": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
+      "args": [
+        "scripts/quality_test_all.py"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
     }
   ]
 }

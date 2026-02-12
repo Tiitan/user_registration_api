@@ -1,4 +1,5 @@
 import asyncio
+import importlib
 import os
 import socket
 import types
@@ -7,6 +8,7 @@ from collections.abc import Generator
 import asyncmy
 import pytest
 from asyncmy.cursors import DictCursor
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.app.config import get_settings
@@ -25,9 +27,8 @@ def _configure_mysql_host_for_test_environment() -> None:
 _configure_mysql_host_for_test_environment()
 get_settings.cache_clear()
 
-from api.app import main
-
 USERS_INTEGRATION_FILES = {"test_create_user.py", "test_activate_user.py"}
+main = importlib.import_module("api.app.main")
 
 
 class DbHelper:
@@ -117,7 +118,9 @@ def client(request: pytest.FixtureRequest) -> Generator[TestClient, None, None]:
     if request.node.fspath.basename not in USERS_INTEGRATION_FILES:
         pytest.skip("Integration TestClient fixture is only for users integration tests.")
     with TestClient(main.app) as test_client:
-        dispatcher = test_client.app.state.email_dispatcher
+        app = test_client.app
+        assert isinstance(app, FastAPI)
+        dispatcher = app.state.email_dispatcher
 
         def _wait_until_idle(self, timeout: float = 2.0) -> None:
             tasks = list(self._background_tasks)

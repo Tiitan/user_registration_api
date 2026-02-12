@@ -34,15 +34,10 @@
     },
     {
       "name": "Tests",
-      "type": "debugpy",
+      "type": "node-terminal",
       "request": "launch",
-      "module": "pytest",
-      "args": [
-        "-q"
-      ],
-      "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "justMyCode": true
+      "preLaunchTask": "quality:test:all",
+      "command": "echo quality:test:all completed"
     }
   ]
 }

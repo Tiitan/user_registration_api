@@ -13,7 +13,7 @@ class CreateUserRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "email": "user@example.com",
-                "password": "StrongPass123",
+                "password": "StrongPass123", # nosec B105
             }
         }
     )

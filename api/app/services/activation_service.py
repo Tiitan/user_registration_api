@@ -100,8 +100,8 @@ class ActivationService:
         if deferred_error is not None:
             raise deferred_error
 
-        assert user_id is not None
-        assert user_email is not None
+        if user_id is None or user_email is None:
+            raise RuntimeError("Activation finished without resolved user identity")
         logger.info("Activation committed for email=%s user_id=%s", email, user_id)
         return ActivatedUserResponse(id=user_id, email=user_email, status="ACTIVE")
 
