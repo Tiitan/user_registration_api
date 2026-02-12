@@ -1,7 +1,9 @@
 """FastAPI application entrypoint."""
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
+from api.app.config import get_settings
 from api.app.exceptions.handlers import register_exception_handlers
 from api.app.lifespan import lifespan
 from api.app.logging_config import configure_logging
@@ -9,6 +11,7 @@ from api.app.observability import RequestContextMiddleware
 from api.app.routers import heartbeat_router, observability_router, users_router
 
 configure_logging()
+settings = get_settings()
 
 
 app = FastAPI(
@@ -31,6 +34,13 @@ app = FastAPI(
 
 register_exception_handlers(app)
 app.add_middleware(RequestContextMiddleware)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_allow_origins_list,
+    allow_credentials=settings.cors_allow_credentials,
+    allow_methods=settings.cors_allow_methods_list,
+    allow_headers=settings.cors_allow_headers_list,
+)
 app.include_router(users_router)
 app.include_router(heartbeat_router)
 app.include_router(observability_router)

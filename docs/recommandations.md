@@ -35,12 +35,6 @@ A 4-digit code has only 10,000 combinations. With 5 attempts per code the probab
 - Add a cooldown between re-registration attempts for the same email
 - Use 6-digit codes for a stronger security margin
 
-### 3. No CORS configuration
-
-If this API will be consumed by a browser-based frontend, CORS middleware is required.
-
-**Recommendation:** Worth mentioning in the interview context even if not needed now. FastAPI supports this via `CORSMiddleware`.
-
 ### 4. Secrets in docker-compose.yml
 
 DB credentials are hardcoded in the compose file.

@@ -140,6 +140,10 @@ Main environment variables (see `api/app/config.py`):
 - `EMAIL_PROVIDER_MAX_RETRIES` (default `3`)
 - `EMAIL_DISPATCH_MAX_CONCURRENCY` (default `50`)
 - `LOG_LEVEL` (default `INFO`)
+- `CORS_ALLOW_ORIGINS` (default `http://localhost:3000,http://127.0.0.1:3000`)
+- `CORS_ALLOW_CREDENTIALS` (default `true`)
+- `CORS_ALLOW_METHODS` (default `*`)
+- `CORS_ALLOW_HEADERS` (default `*`)
 
 ## Additional References
 
