@@ -1,3 +1,5 @@
+"""Service handling account activation transactions."""
+
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -24,7 +26,10 @@ logger = logging.getLogger(__name__)
 
 
 class ActivationService:
+    """Activate pending users using password and activation code."""
+
     def __init__(self, db_pool: asyncmy.Pool, email_dispatcher: EmailDispatcher) -> None:
+        """Initialize service dependencies and activation policy."""
         settings = get_settings()
         self._db_pool = db_pool
         self._email_dispatcher = email_dispatcher
@@ -35,6 +40,7 @@ class ActivationService:
         self._activation_code_repository = ActivationCodeRepository()
 
     async def activate_user(self, *, email: str, password: str, code: str) -> ActivatedUserResponse:
+        """Activate a user or raise a domain error for invalid state."""
         logger.info("Starting activation transaction for email=%s", email)
         resend_info: tuple[int, int, str, str] | None = None
         deferred_error: Exception | None = None
@@ -106,12 +112,14 @@ class ActivationService:
         return ActivatedUserResponse(id=user_id, email=user_email, status="ACTIVE")
 
     def _verify_password(self, *, password: str, password_hash: str) -> None:
+        """Validate password against the stored hash."""
         try:
             self._password_hasher.verify(password_hash, password)
         except (VerifyMismatchError, VerificationError):
             raise InvalidCredentialsError()
 
     def _is_code_expired(self, sent_at: datetime | None) -> bool:
+        """Return whether the sent timestamp exceeds configured TTL."""
         if sent_at is None:
             return False
         sent_at_utc = self._as_utc(sent_at)
@@ -119,9 +127,11 @@ class ActivationService:
         return now_utc > sent_at_utc + timedelta(seconds=self._activation_code_ttl_seconds)
 
     def _as_utc(self, value: datetime) -> datetime:
+        """Normalize a datetime to UTC timezone."""
         if value.tzinfo is None:
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
 
     def _utc_now(self) -> datetime:
+        """Return current UTC timestamp."""
         return datetime.now(timezone.utc)

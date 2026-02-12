@@ -1,3 +1,5 @@
+"""Shared pytest fixtures and DB helpers for integration tests."""
+
 import asyncio
 import importlib
 import os
@@ -15,6 +17,7 @@ from api.app.config import get_settings
 
 
 def _configure_mysql_host_for_test_environment() -> None:
+    """Use localhost when Docker hostname is not resolvable."""
     configured_host = os.environ.get("MYSQL_HOST", "mysql")
     if configured_host != "mysql":
         return
@@ -32,7 +35,10 @@ main = importlib.import_module("api.app.main")
 
 
 class DbHelper:
+    """Convenience wrapper for async MySQL operations in tests."""
+
     def __init__(self) -> None:
+        """Initialize database connection parameters from settings."""
         settings = get_settings()
         self._connect_kwargs = {
             "host": settings.mysql_host,
@@ -44,21 +50,26 @@ class DbHelper:
         }
 
     def execute(self, query: str, args: tuple | None = None) -> None:
+        """Run a statement without returning rows."""
         asyncio.run(self._execute(query=query, args=args))
 
     def fetch_one(self, query: str, args: tuple | None = None) -> dict | None:
+        """Return one row as a dictionary or `None`."""
         return asyncio.run(self._fetch_one(query=query, args=args))
 
     def fetch_all(self, query: str, args: tuple | None = None) -> list[dict]:
+        """Return all rows as dictionaries."""
         return asyncio.run(self._fetch_all(query=query, args=args))
 
     def count(self, query: str, args: tuple | None = None) -> int:
+        """Return the first numeric value from a count-like query."""
         row = self.fetch_one(query=query, args=args)
         if row is None:
             return 0
         return int(next(iter(row.values())))
 
     def latest_unused_activation_code(self, email: str) -> dict:
+        """Return the latest unused activation code row for an email."""
         row = self.fetch_one(
             "SELECT ac.id, ac.code, ac.sent_at, ac.used_at, ac.attempt_count, ac.created_at "
             "FROM activation_codes ac "
@@ -73,6 +84,7 @@ class DbHelper:
         return row
 
     async def _execute(self, query: str, args: tuple | None) -> None:
+        """Async implementation backing `execute`."""
         connection = await asyncmy.connect(**self._connect_kwargs)
         try:
             async with connection.cursor(DictCursor) as cursor:
@@ -81,6 +93,7 @@ class DbHelper:
             connection.close()
 
     async def _fetch_one(self, query: str, args: tuple | None) -> dict | None:
+        """Async implementation backing `fetch_one`."""
         connection = await asyncmy.connect(**self._connect_kwargs)
         try:
             async with connection.cursor(DictCursor) as cursor:
@@ -90,6 +103,7 @@ class DbHelper:
             connection.close()
 
     async def _fetch_all(self, query: str, args: tuple | None) -> list[dict]:
+        """Async implementation backing `fetch_all`."""
         connection = await asyncmy.connect(**self._connect_kwargs)
         try:
             async with connection.cursor(DictCursor) as cursor:
@@ -102,11 +116,13 @@ class DbHelper:
 
 @pytest.fixture(scope="session")
 def db_helper() -> DbHelper:
+    """Provide a reusable DB helper for integration tests."""
     return DbHelper()
 
 
 @pytest.fixture(autouse=True)
 def clean_tables_for_users_integration_tests(request: pytest.FixtureRequest, db_helper: DbHelper) -> None:
+    """Clean user tables before each users integration test."""
     if request.node.fspath.basename not in USERS_INTEGRATION_FILES:
         return
     db_helper.execute("DELETE FROM activation_codes")
@@ -115,6 +131,7 @@ def clean_tables_for_users_integration_tests(request: pytest.FixtureRequest, db_
 
 @pytest.fixture
 def client(request: pytest.FixtureRequest) -> Generator[TestClient, None, None]:
+    """Provide a TestClient with a helper to wait for background tasks."""
     if request.node.fspath.basename not in USERS_INTEGRATION_FILES:
         pytest.skip("Integration TestClient fixture is only for users integration tests.")
     with TestClient(main.app) as test_client:

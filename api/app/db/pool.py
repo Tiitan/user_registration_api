@@ -1,3 +1,5 @@
+"""MySQL connection pool creation utilities."""
+
 import asyncio
 import logging
 from typing import cast
@@ -10,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 async def create_mysql_pool_with_retry() -> asyncmy.Pool:
+    """Create a MySQL pool with bounded retry attempts."""
     settings = get_settings()
     last_exception: Exception | None = None
 

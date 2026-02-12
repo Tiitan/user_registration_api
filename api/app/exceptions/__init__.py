@@ -1,3 +1,5 @@
+"""Domain exceptions and exception handler registration."""
+
 from api.app.exceptions.domain import (
     AccountAlreadyActiveError,
     ActivationCodeAttemptsExceededError,

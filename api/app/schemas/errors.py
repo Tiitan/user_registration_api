@@ -1,9 +1,13 @@
+"""Error response schemas used across endpoints."""
+
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class ErrorDetail(BaseModel):
+    """Machine- and human-readable error metadata."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -20,6 +24,8 @@ class ErrorDetail(BaseModel):
 
 
 class ErrorResponse(BaseModel):
+    """Top-level API error response body."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {

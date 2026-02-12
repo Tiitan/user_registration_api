@@ -1,3 +1,5 @@
+"""Structured logging filters and formatters."""
+
 from __future__ import annotations
 
 import json
@@ -8,7 +10,10 @@ from api.app.observability.request_context import get_correlation_id, get_reques
 
 
 class RequestContextFilter(logging.Filter):
+    """Inject request context and default structured fields into records."""
+
     def filter(self, record: logging.LogRecord) -> bool:
+        """Attach request-scoped attributes used by the JSON formatter."""
         record.request_id = get_request_id()
         record.correlation_id = get_correlation_id()
         if not hasattr(record, "event"):
@@ -30,7 +35,10 @@ class RequestContextFilter(logging.Filter):
 
 
 class JsonFormatter(logging.Formatter):
+    """Render log records as JSON payloads."""
+
     def format(self, record: logging.LogRecord) -> str:
+        """Serialize the record to a JSON string."""
         payload: dict[str, object] = {
             "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
             "level": record.levelname,

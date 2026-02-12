@@ -1,3 +1,5 @@
+"""Service handling user registration transactions."""
+
 import logging
 import secrets
 
@@ -14,7 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 class RegistrationService:
+    """Create or reset pending users and enqueue activation delivery."""
+
     def __init__(self, db_pool: asyncmy.Pool, email_dispatcher: EmailDispatcher) -> None:
+        """Initialize service dependencies."""
         self._db_pool = db_pool
         self._email_dispatcher = email_dispatcher
         self.password_hasher = PasswordHasher()
@@ -22,6 +27,7 @@ class RegistrationService:
         self._activation_code_repository = ActivationCodeRepository()
 
     async def register_user(self, *, email: str, password: str) -> UserResponse:
+        """Register a user and schedule an activation email."""
         logger.info("Starting registration transaction for email=%s", email)
         password_hash = self.password_hasher.hash(password)
         code = f"{secrets.randbelow(10_000):04d}"

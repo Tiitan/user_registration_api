@@ -1,3 +1,5 @@
+"""Application lifespan hooks for startup and shutdown resources."""
+
 from contextlib import asynccontextmanager
 import logging
 from typing import AsyncIterator
@@ -14,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """Initialize and clean up shared app resources."""
     logger.info("Starting application lifespan")
     db_pool = await create_mysql_pool_with_retry()
     email_provider = MockEmailProvider()
@@ -26,7 +29,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger.info("Application resources initialized")
 
     yield
-    
+
     shutdown_pool = getattr(app.state, "db_pool", None)
     shutdown_dispatcher = getattr(app.state, "email_dispatcher", None)
     app.state.email_provider = None

@@ -1,3 +1,5 @@
+"""API routers exposed by the application."""
+
 from api.app.routers.heartbeat import router as heartbeat_router
 from api.app.routers.users import router as users_router
 

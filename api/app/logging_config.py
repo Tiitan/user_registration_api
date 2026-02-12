@@ -1,9 +1,12 @@
+"""Logging configuration for structured API logs."""
+
 import logging.config
 
 from api.app.config import get_settings
 
 
 def configure_logging() -> None:
+    """Configure application and Uvicorn loggers."""
     log_level = get_settings().log_level.upper()
 
     logging.config.dictConfig(

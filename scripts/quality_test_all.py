@@ -1,8 +1,11 @@
+"""Run linting, type checking, security, and tests in sequence."""
+
 import subprocess
 import sys
 
 
 def main() -> int:
+    """Execute the quality pipeline and return an exit code."""
     commands: list[tuple[str, list[str]]] = [
         ("ruff check .", [sys.executable, "-m", "ruff", "check", "."]),
         ("mypy .", [sys.executable, "-m", "mypy", "."]),

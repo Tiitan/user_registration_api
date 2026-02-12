@@ -1,9 +1,13 @@
+"""Configuration loading for runtime settings."""
+
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """Application settings sourced from environment variables."""
+
     log_level: str = "INFO"
     mysql_host: str = "mysql"
     mysql_port: int = 3306
@@ -30,4 +34,5 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
+    """Return a cached settings instance."""
     return Settings()

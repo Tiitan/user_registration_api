@@ -1,3 +1,5 @@
+"""Database helpers and transaction utilities."""
+
 from api.app.db.pool import create_mysql_pool_with_retry
 from api.app.db.transaction import transactional_cursor
 

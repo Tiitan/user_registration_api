@@ -1,3 +1,5 @@
+"""Request and correlation ID context propagation middleware."""
+
 from __future__ import annotations
 
 from contextvars import ContextVar, Token
@@ -15,14 +17,17 @@ _correlation_id_var: ContextVar[str] = ContextVar("correlation_id", default="-")
 
 
 def get_request_id() -> str:
+    """Return the request ID for the current context."""
     return _request_id_var.get()
 
 
 def get_correlation_id() -> str:
+    """Return the correlation ID for the current context."""
     return _correlation_id_var.get()
 
 
 def _resolve_id(value: str | None) -> str:
+    """Return a trimmed ID value or generate one when missing."""
     if value is None:
         return str(uuid4())
     stripped = value.strip()
@@ -30,7 +35,10 @@ def _resolve_id(value: str | None) -> str:
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
+    """Populate request IDs in contextvars, state, and response headers."""
+
     async def dispatch(self, request: Request, call_next) -> Response:  # type: ignore[override]
+        """Attach request IDs for the request lifecycle."""
         request_id = _resolve_id(request.headers.get(REQUEST_ID_HEADER))
         correlation_id = _resolve_id(request.headers.get(CORRELATION_ID_HEADER))
 

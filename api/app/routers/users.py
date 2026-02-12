@@ -1,3 +1,5 @@
+"""User registration and activation endpoints."""
+
 import logging
 
 from fastapi import APIRouter, Depends, Security, status
@@ -45,6 +47,7 @@ http_basic = HTTPBasic(auto_error=False)
     },
 )
 async def create_user(payload: CreateUserRequest, service: RegistrationService = Depends(get_registration_service)) -> UserResponse:
+    """Create or reset a pending user and schedule email delivery."""
     logger.info("POST /v1/users requested for email=%s", payload.email)
     user = await service.register_user(email=payload.email, password=payload.password)
     logger.info("POST /v1/users succeeded for email=%s user_id=%s", payload.email, user.id)
@@ -147,6 +150,7 @@ async def create_user(payload: CreateUserRequest, service: RegistrationService =
     },
 )
 async def activate_user(payload: ActivateUserRequest, credentials: HTTPBasicCredentials | None = Security(http_basic), service: ActivationService = Depends(get_activation_service)) -> ActivatedUserResponse:
+    """Activate a pending user account with credentials and code."""
     if credentials is None:
         raise InvalidCredentialsError()
 

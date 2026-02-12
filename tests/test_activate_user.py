@@ -1,3 +1,5 @@
+"""Integration tests for user activation endpoint."""
+
 from datetime import timedelta, timezone
 
 from api.app.config import get_settings
@@ -5,11 +7,13 @@ from api.app.services.activation_service import ActivationService
 
 
 def _create_pending_user(client, *, email: str, password: str) -> None:
+    """Create a pending user fixture via API."""
     response = client.post("/v1/users", json={"email": email, "password": password})
     assert response.status_code == 201
 
 
 def test_activate_user_returns_200(client, db_helper) -> None:
+    """Activates a pending user with valid credentials and code."""
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
     code = str(db_helper.latest_unused_activation_code("user@example.com")["code"])
 
@@ -25,6 +29,7 @@ def test_activate_user_returns_200(client, db_helper) -> None:
 
 
 def test_activate_user_returns_401_for_invalid_credentials(client) -> None:
+    """Rejects activation when password is invalid."""
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
 
     response = client.post("/v1/users/activate", auth=("user@example.com", "WrongPass123"), json={"code": "1234"})
@@ -34,6 +39,7 @@ def test_activate_user_returns_401_for_invalid_credentials(client) -> None:
 
 
 def test_activate_user_returns_404_when_user_not_found(client) -> None:
+    """Returns not found for unknown users."""
     response = client.post("/v1/users/activate", auth=("missing@example.com", "StrongPass123"), json={"code": "1234"})
 
     assert response.status_code == 404
@@ -41,6 +47,7 @@ def test_activate_user_returns_404_when_user_not_found(client) -> None:
 
 
 def test_activate_user_returns_409_when_account_is_already_active(client, db_helper) -> None:
+    """Rejects activation when account is already active."""
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
     code = str(db_helper.latest_unused_activation_code("user@example.com")["code"])
 
@@ -53,6 +60,7 @@ def test_activate_user_returns_409_when_account_is_already_active(client, db_hel
 
 
 def test_activate_user_returns_400_when_code_mismatch(client, db_helper) -> None:
+    """Increments attempts and returns mismatch for wrong code."""
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
     actual_code = str(db_helper.latest_unused_activation_code("user@example.com")["code"])
     wrong_code = "0000" if actual_code != "0000" else "9999"
@@ -67,6 +75,7 @@ def test_activate_user_returns_400_when_code_mismatch(client, db_helper) -> None
 
 
 def test_activate_user_returns_400_when_attempts_exceeded(client, db_helper) -> None:
+    """Returns attempts exceeded after maximum failed tries."""
     settings = get_settings()
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
     actual_code = str(db_helper.latest_unused_activation_code("user@example.com")["code"])
@@ -85,6 +94,7 @@ def test_activate_user_returns_400_when_attempts_exceeded(client, db_helper) -> 
 
 
 def test_activate_user_returns_410_when_code_expired(client, db_helper, monkeypatch) -> None:
+    """Returns expired and issues a replacement code when TTL is exceeded."""
     settings = get_settings()
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
     client.app.state.email_dispatcher.wait_until_idle(timeout=2.0)
@@ -113,6 +123,7 @@ def test_activate_user_returns_410_when_code_expired(client, db_helper, monkeypa
 
 
 def test_activate_user_requires_basic_auth(client) -> None:
+    """Requires HTTP Basic credentials for activation."""
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
 
     response = client.post("/v1/users/activate", json={"code": "1234"})
@@ -122,6 +133,7 @@ def test_activate_user_requires_basic_auth(client) -> None:
 
 
 def test_activate_user_rejects_invalid_code_format(client) -> None:
+    """Rejects activation codes that are not four digits."""
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
 
     response = client.post("/v1/users/activate", auth=("user@example.com", "StrongPass123"), json={"code": "abc"})

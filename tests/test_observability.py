@@ -1,3 +1,5 @@
+"""Integration tests for logging, request IDs, and metrics."""
+
 import logging
 
 from api.app.observability import CORRELATION_ID_HEADER, REQUEST_ID_HEADER
@@ -5,19 +7,25 @@ from api.app.observability.metrics import InMemoryMetricsRecorder
 
 
 class _ApiLogPropagation:
+    """Context manager that enables API logger propagation for caplog."""
+
     def __init__(self) -> None:
+        """Capture and store logger propagation state."""
         self._logger = logging.getLogger("api")
         self._original = self._logger.propagate
 
     def __enter__(self) -> None:
+        """Enable propagation while inside context."""
         self._logger.propagate = True
         return None
 
     def __exit__(self, exc_type, exc, tb) -> None:
+        """Restore original propagation state."""
         self._logger.propagate = self._original
 
 
 def test_request_ids_echoed_when_provided(client) -> None:
+    """Echoes request and correlation IDs from incoming headers."""
     headers = {
         REQUEST_ID_HEADER: "req-123",
         CORRELATION_ID_HEADER: "corr-123",
@@ -30,6 +38,7 @@ def test_request_ids_echoed_when_provided(client) -> None:
 
 
 def test_request_ids_generated_when_missing_and_present_in_logs(client, caplog) -> None:
+    """Generates IDs when absent and attaches them to logs."""
     with _ApiLogPropagation():
         caplog.set_level(logging.INFO)
         response = client.post("/v1/users", json={"email": "obs@example.com", "password": "StrongPass123"})
@@ -51,6 +60,7 @@ def test_request_ids_generated_when_missing_and_present_in_logs(client, caplog) 
 
 
 def test_domain_exception_log_contains_context_and_error_code(client, caplog) -> None:
+    """Includes context IDs and error code in domain error logs."""
     with _ApiLogPropagation():
         caplog.set_level(logging.WARNING)
         headers = {
@@ -78,6 +88,7 @@ def test_domain_exception_log_contains_context_and_error_code(client, caplog) ->
 
 
 def test_dispatch_metrics_success_and_undelivered_gauge(client) -> None:
+    """Tracks successful dispatch counters, latency, and gauge."""
     metrics = client.app.state.metrics
     assert isinstance(metrics, InMemoryMetricsRecorder)
     metrics.reset()
@@ -97,6 +108,7 @@ def test_dispatch_metrics_success_and_undelivered_gauge(client) -> None:
 
 
 def test_dispatch_metrics_terminal_failure_tracks_provider_errors(client) -> None:
+    """Tracks terminal failures and provider error metrics."""
     metrics = client.app.state.metrics
     assert isinstance(metrics, InMemoryMetricsRecorder)
     metrics.reset()

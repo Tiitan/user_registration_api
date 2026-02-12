@@ -1,7 +1,10 @@
+"""Integration tests for user registration endpoint."""
+
 from argon2 import PasswordHasher
 import pytest
 
 def test_create_user_returns_201(client, db_helper) -> None:
+    """Creates a pending user and activation code."""
     response = client.post("/v1/users", json={"email": "user@example.com", "password": "StrongPass123"})
 
     assert response.status_code == 201
@@ -21,6 +24,7 @@ def test_create_user_returns_201(client, db_helper) -> None:
 
 
 def test_create_user_returns_409_when_email_already_active(client, db_helper) -> None:
+    """Rejects registration when the account is already active."""
     create_response = client.post("/v1/users", json={"email": "active@example.com", "password": "StrongPass123"})
     assert create_response.status_code == 201
 
@@ -35,6 +39,7 @@ def test_create_user_returns_409_when_email_already_active(client, db_helper) ->
 
 
 def test_create_user_rejects_weak_password(client) -> None:
+    """Rejects passwords shorter than minimum length."""
     response = client.post("/v1/users", json={"email": "user@example.com", "password": "short1"})
     assert response.status_code == 422
     detail = response.json()["detail"]
@@ -45,6 +50,7 @@ def test_create_user_rejects_weak_password(client) -> None:
 
 @pytest.mark.parametrize("password", ["12345678", "OnlyLetters"])
 def test_create_user_rejects_password_without_letter_or_digit(client, password: str) -> None:
+    """Rejects passwords that miss required character classes."""
     response = client.post("/v1/users", json={"email": "user@example.com", "password": password})
 
     assert response.status_code == 422
@@ -55,6 +61,7 @@ def test_create_user_rejects_password_without_letter_or_digit(client, password: 
 
 
 def test_create_user_rejects_invalid_email_format(client) -> None:
+    """Rejects invalid email formats via schema validation."""
     response = client.post("/v1/users", json={"email": "not-an-email", "password": "StrongPass123"})
 
     assert response.status_code == 422
@@ -64,6 +71,7 @@ def test_create_user_rejects_invalid_email_format(client) -> None:
 
 
 def test_create_user_resets_pending_user_and_creates_new_code(client, db_helper) -> None:
+    """Resets pending user password and creates a fresh activation code."""
     first_response = client.post("/v1/users", json={"email": "pending@example.com", "password": "StrongPass123"})
     assert first_response.status_code == 201
     first_user_id = int(first_response.json()["id"])

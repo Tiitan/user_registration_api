@@ -1,3 +1,5 @@
+"""User-related request and response schemas."""
+
 import re
 from typing import Literal
 
@@ -9,6 +11,8 @@ PASSWORD_HAS_LETTER = re.compile(r"[A-Za-z]")
 
 
 class CreateUserRequest(BaseModel):
+    """Payload for creating a pending user account."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -24,6 +28,7 @@ class CreateUserRequest(BaseModel):
     @field_validator("password")
     @classmethod
     def validate_password_strength(cls, value: str) -> str:
+        """Validate password length and basic complexity."""
         if len(value) < 8:
             raise PydanticCustomError("password_too_short", "Password must be at least 8 characters long")
         if not PASSWORD_HAS_LETTER.search(value) or not PASSWORD_HAS_DIGIT.search(value):
@@ -32,6 +37,8 @@ class CreateUserRequest(BaseModel):
 
 
 class UserResponse(BaseModel):
+    """Response payload for a pending user."""
+
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
@@ -48,6 +55,8 @@ class UserResponse(BaseModel):
 
 
 class ActivateUserRequest(BaseModel):
+    """Payload for account activation."""
+
     model_config = ConfigDict(json_schema_extra={"example": {"code": "1234"}})
 
     code: str = Field(description="4-digit activation code")
@@ -55,12 +64,15 @@ class ActivateUserRequest(BaseModel):
     @field_validator("code")
     @classmethod
     def validate_code_format(cls, value: str) -> str:
+        """Require exactly four numeric digits."""
         if not re.fullmatch(r"\d{4}", value):
             raise PydanticCustomError("invalid_activation_code_format", "Code must contain exactly 4 digits")
         return value
 
 
 class ActivatedUserResponse(BaseModel):
+    """Response payload for an active user."""
+
     model_config = ConfigDict(json_schema_extra={"example": {"id": 123, "email": "user@example.com", "status": "ACTIVE"}})
 
     id: int = Field(description="Unique user identifier")

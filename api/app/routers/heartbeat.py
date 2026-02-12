@@ -1,3 +1,5 @@
+"""Heartbeat endpoint router."""
+
 from fastapi import APIRouter
 
 from api.app.schemas.common import HeartbeatResponse
@@ -13,4 +15,5 @@ router = APIRouter(tags=["health"])
     responses={200: {"description": "Service is healthy", "content": {"application/json": {"example": {"status": "ok"}}}}},
 )
 async def heartbeat() -> HeartbeatResponse:
+    """Return service liveness status."""
     return HeartbeatResponse(status="ok")

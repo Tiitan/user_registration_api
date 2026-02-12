@@ -1,3 +1,5 @@
+"""Observability helpers for metrics and request context."""
+
 from api.app.observability.metrics import InMemoryMetricsRecorder, MetricsRecorder, NoOpMetricsRecorder
 from api.app.observability.request_context import (
     CORRELATION_ID_HEADER,

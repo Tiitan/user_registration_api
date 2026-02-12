@@ -1,3 +1,5 @@
+"""HTTP exception handlers for domain errors."""
+
 from collections.abc import Awaitable, Callable
 import logging
 
@@ -18,10 +20,13 @@ logger = logging.getLogger(__name__)
 
 
 def _build_error_response(*, status_code: int, error: str, message: str, headers: dict[str, str] | None = None) -> JSONResponse:
+    """Build a standardized API error response payload."""
     return JSONResponse(status_code=status_code, content={"detail": {"error": error, "message": message, "details": None}}, headers=headers)
 
 
 def _make_domain_handler(*, status_code: int, error: str, message: str, headers: dict[str, str] | None = None) -> Callable[[Request, Exception], Awaitable[JSONResponse]]:
+    """Create a handler that logs and maps a domain error to HTTP."""
+
     async def _handler(request: Request, __: Exception) -> JSONResponse:
         logger.warning(
             "Handled domain exception",
@@ -38,6 +43,7 @@ def _make_domain_handler(*, status_code: int, error: str, message: str, headers:
 
 
 def register_exception_handlers(app: FastAPI) -> None:
+    """Register all domain exception handlers on the FastAPI app."""
     app.add_exception_handler(
         EmailAlreadyExistsError,
         _make_domain_handler(

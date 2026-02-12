@@ -1,3 +1,5 @@
+"""FastAPI application entrypoint."""
+
 from fastapi import FastAPI
 
 from api.app.exceptions.handlers import register_exception_handlers

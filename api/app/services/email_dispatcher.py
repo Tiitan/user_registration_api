@@ -1,3 +1,5 @@
+"""Background email dispatch and delivery metrics service."""
+
 import asyncio
 import logging
 import secrets
@@ -15,7 +17,10 @@ logger = logging.getLogger(__name__)
 
 
 class EmailDispatcher:
+    """Dispatch activation emails with retries and metrics."""
+
     def __init__(self, db_pool: asyncmy.Pool, email_provider: EmailProvider, *, metrics: MetricsRecorder | None = None, provider_name: str | None = None) -> None:
+        """Initialize dispatcher dependencies and retry settings."""
         settings = get_settings()
         self._db_pool = db_pool
         self._email_provider = email_provider
@@ -29,6 +34,7 @@ class EmailDispatcher:
         self._activation_code_repository = ActivationCodeRepository()
 
     def dispatch_activation_email(self, *, user_id: int, activation_code_id: int, recipient_email: str, code: str) -> None:
+        """Schedule an activation email in a background task."""
         task = asyncio.create_task(
             self._run_dispatch(user_id=user_id, activation_code_id=activation_code_id, recipient_email=recipient_email, code=code)
         )
@@ -46,6 +52,7 @@ class EmailDispatcher:
         task.add_done_callback(_on_done)
 
     async def _run_dispatch(self, *, user_id: int, activation_code_id: int, recipient_email: str, code: str) -> None:
+        """Run one dispatch attempt and record outcomes."""
         async with self._dispatch_semaphore:
             tags = {"provider": self._provider_name}
             self._metrics.inc("dispatch_attempts_total", tags=tags)
@@ -111,6 +118,7 @@ class EmailDispatcher:
             await self._refresh_undelivered_activation_codes_metric()
 
     async def _mark_activation_code_sent_with_retries(self, *, activation_code_id: int, user_id: int) -> bool:
+        """Retry sent-at persistence with exponential backoff and jitter."""
         for attempt in range(1, self._max_retries + 1):
             try:
                 await self._mark_activation_code_sent(activation_code_id=activation_code_id)
@@ -134,10 +142,12 @@ class EmailDispatcher:
         return False
 
     async def _mark_activation_code_sent(self, *, activation_code_id: int) -> None:
+        """Persist `sent_at` for a delivered activation code."""
         async with transactional_cursor(self._db_pool) as cursor:
             await self._activation_code_repository.mark_sent(cursor=cursor, activation_code_id=activation_code_id)
 
     async def _refresh_undelivered_activation_codes_metric(self) -> None:
+        """Update gauge with current number of undelivered codes."""
         try:
             async with transactional_cursor(self._db_pool) as cursor:
                 undelivered_count = await self._activation_code_repository.count_undelivered(cursor=cursor)
@@ -147,6 +157,7 @@ class EmailDispatcher:
         self._metrics.set("activation_codes_undelivered", float(undelivered_count))
 
     def _compute_retry_delay_seconds(self, *, attempt: int) -> float:
+        """Compute bounded exponential backoff with jitter."""
         raw_delay = self._retry_base_delay_seconds * (2 ** (attempt - 1))
         bounded_delay = min(self._retry_max_delay_seconds, raw_delay)
         jitter_span = bounded_delay * 0.2
@@ -154,6 +165,7 @@ class EmailDispatcher:
         return max(0.0, bounded_delay + jitter)
 
     async def aclose(self) -> None:
+        """Wait for in-flight background dispatch tasks to finish."""
         if not self._background_tasks:
             return
         pending = list(self._background_tasks)
