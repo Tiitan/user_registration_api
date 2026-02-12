@@ -1,4 +1,5 @@
 from collections.abc import Awaitable, Callable
+import logging
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
@@ -13,13 +14,25 @@ from api.app.exceptions.domain import (
     UserNotFoundError,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _build_error_response(*, status_code: int, error: str, message: str, headers: dict[str, str] | None = None) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"detail": {"error": error, "message": message, "details": None}}, headers=headers)
 
 
 def _make_domain_handler(*, status_code: int, error: str, message: str, headers: dict[str, str] | None = None) -> Callable[[Request, Exception], Awaitable[JSONResponse]]:
-    async def _handler(_: Request, __: Exception) -> JSONResponse:
+    async def _handler(request: Request, __: Exception) -> JSONResponse:
+        logger.warning(
+            "Handled domain exception",
+            extra={
+                "event": "api_error",
+                "error_code": error,
+                "status_code": status_code,
+                "http_method": request.method,
+                "path": request.url.path,
+            },
+        )
         return _build_error_response(status_code=status_code, error=error, message=message, headers=headers)
     return _handler
 

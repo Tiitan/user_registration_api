@@ -288,15 +288,23 @@ Lifespan-managed resources:
 
 ## 14. Observability
 
-- Structured logs with request/correlation IDs.
-- Domain event logs for registration and activation lifecycle.
-- Dispatch metrics:
-  - dispatch attempts
-  - dispatch successes
-  - dispatch failures (terminal)
-  - provider latency
-  - provider error rate
-  - undelivered activation code count (`sent_at IS NULL`)
+- Structured JSON logs include:
+  - `timestamp`, `level`, `logger`, `event`, `message`
+  - `request_id`, `correlation_id`
+  - optional fields: `user_id`, `activation_code_id`, `provider`, `error_type`, `error_code`, `duration_ms`
+- Request context propagation:
+  - incoming `X-Request-ID` and `X-Correlation-ID` are reused when present
+  - values are generated when missing
+  - both headers are returned on responses
+- Domain errors are logged in exception handlers with `event=api_error` and stable `error_code`.
+- Dispatch instrumentation (in-memory recorder in baseline, no reporting endpoint):
+  - `dispatch_attempts_total`: counts every dispatch start; baseline denominator for success/failure ratios and volume trends.
+  - `dispatch_successes_total`: counts dispatches that complete provider send and `sent_at` persistence path; validates delivery pipeline health.
+  - `dispatch_terminal_failures_total`: counts dispatches that end in terminal failure (provider failure or final `sent_at` update failure); measures lost deliveries in the best-effort model.
+  - `provider_latency_ms`: observes provider call duration; tracks external dependency performance and slowdown risk.
+  - `provider_errors_total`: counts provider-call errors by `provider` and `error_type`; supports failure taxonomy and derived error-rate calculations.
+  - `activation_codes_undelivered` gauge (`sent_at IS NULL`): tracks current undelivered activation code count; indicates delivery backlog/risk exposure at a point in time.
+  - `provider_error_rate` is derived externally as `provider_errors_total / dispatch_attempts_total`; it is not stored as a standalone metric.
 
 ## 15. Periodic Cleanup
 

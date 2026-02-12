@@ -27,7 +27,7 @@ def _configure_mysql_host_for_test_environment() -> None:
 _configure_mysql_host_for_test_environment()
 get_settings.cache_clear()
 
-USERS_INTEGRATION_FILES = {"test_create_user.py", "test_activate_user.py"}
+USERS_INTEGRATION_FILES = {"test_create_user.py", "test_activate_user.py", "test_observability.py"}
 main = importlib.import_module("api.app.main")
 
 

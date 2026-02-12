@@ -54,3 +54,10 @@ class ActivationCodeRepository:
             "UPDATE activation_codes SET sent_at = CURRENT_TIMESTAMP(6) WHERE id = %s AND sent_at IS NULL",
             (activation_code_id,),
         )
+
+    async def count_undelivered(self, *, cursor: Any) -> int:
+        await cursor.execute("SELECT COUNT(*) AS undelivered_count FROM activation_codes WHERE sent_at IS NULL")
+        row = await cursor.fetchone()
+        if row is None:
+            return 0
+        return int(row["undelivered_count"])

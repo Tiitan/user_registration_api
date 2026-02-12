@@ -3,6 +3,7 @@ from typing import cast
 import asyncmy
 from fastapi import Request
 
+from api.app.observability.metrics import MetricsRecorder
 from api.app.services.activation_service import ActivationService
 from api.app.services.email_dispatcher import EmailDispatcher
 from api.app.services.registration_service import RegistrationService
@@ -14,6 +15,10 @@ def get_db_pool(request: Request) -> asyncmy.Pool:
 
 def get_email_dispatcher(request: Request) -> EmailDispatcher:
     return cast(EmailDispatcher, request.app.state.email_dispatcher)
+
+
+def get_metrics_recorder(request: Request) -> MetricsRecorder:
+    return cast(MetricsRecorder, request.app.state.metrics)
 
 
 def get_registration_service(request: Request) -> RegistrationService:
