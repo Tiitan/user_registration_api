@@ -7,8 +7,8 @@ import asyncmy
 from argon2.exceptions import VerificationError, VerifyMismatchError
 
 from api.app.config import get_settings
-from api.app.db.transaction import transactional_cursor
-from api.app.exceptions.domain import (
+from api.app.db import transactional_cursor
+from api.app.exceptions import (
     AccountAlreadyActiveError,
     ActivationCodeAttemptsExceededError,
     ActivationCodeExpiredError,
@@ -17,9 +17,8 @@ from api.app.exceptions.domain import (
     UserNotFoundError,
 )
 from api.app.repositories import ActivationCodeRepository, UserRepository
-from api.app.security.activation_code_generator import generate_activation_code
-from api.app.security.password_hasher import PASSWORD_HASHER
-from api.app.schemas.users import ActivatedUserResponse
+from api.app.schemas import ActivatedUserResponse
+from api.app.security import PASSWORD_HASHER, generate_activation_code
 from api.app.services.email_dispatcher import EmailDispatcher
 
 logger = logging.getLogger(__name__)

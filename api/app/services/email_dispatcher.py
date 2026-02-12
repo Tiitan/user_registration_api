@@ -8,9 +8,9 @@ from time import perf_counter
 import asyncmy
 
 from api.app.config import get_settings
-from api.app.db.transaction import transactional_cursor
+from api.app.db import transactional_cursor
 from api.app.integrations import EmailProvider
-from api.app.observability.metrics import MetricsRecorder, NoOpMetricsRecorder
+from api.app.observability import MetricsRecorder, NoOpMetricsRecorder
 from api.app.repositories import ActivationCodeRepository
 
 logger = logging.getLogger(__name__)

@@ -6,10 +6,8 @@ import asyncmy
 from fastapi import Request
 
 from api.app.integrations import EmailProvider
-from api.app.observability.metrics import MetricsRecorder
-from api.app.services.activation_service import ActivationService
-from api.app.services.email_dispatcher import EmailDispatcher
-from api.app.services.registration_service import RegistrationService
+from api.app.observability import MetricsRecorder
+from api.app.services import ActivationService, EmailDispatcher, RegistrationService
 
 
 def get_db_pool(request: Request) -> asyncmy.Pool:

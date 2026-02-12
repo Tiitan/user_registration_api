@@ -4,8 +4,7 @@ import logging
 
 import pytest
 
-from api.app.observability import CORRELATION_ID_HEADER, REQUEST_ID_HEADER
-from api.app.observability.metrics import InMemoryMetricsRecorder
+from api.app.observability import CORRELATION_ID_HEADER, InMemoryMetricsRecorder, REQUEST_ID_HEADER
 
 pytestmark = pytest.mark.db_cleanup
 

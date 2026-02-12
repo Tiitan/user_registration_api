@@ -1,6 +1,6 @@
 """Domain exceptions and exception handler registration."""
 
-from api.app.exceptions.domain import (
+from .domain import (
     AccountAlreadyActiveError,
     ActivationCodeAttemptsExceededError,
     ActivationCodeExpiredError,
@@ -9,7 +9,7 @@ from api.app.exceptions.domain import (
     InvalidCredentialsError,
     UserNotFoundError,
 )
-from api.app.exceptions.handlers import register_exception_handlers
+from .handlers import register_exception_handlers
 
 __all__ = [
     "AccountAlreadyActiveError",

@@ -4,12 +4,11 @@ import logging
 
 import asyncmy
 
-from api.app.db.transaction import transactional_cursor
-from api.app.exceptions.domain import EmailAlreadyExistsError
+from api.app.db import transactional_cursor
+from api.app.exceptions import EmailAlreadyExistsError
 from api.app.repositories import ActivationCodeRepository, UserRepository
-from api.app.security.activation_code_generator import generate_activation_code
-from api.app.security.password_hasher import PASSWORD_HASHER
-from api.app.schemas.users import UserResponse
+from api.app.schemas import UserResponse
+from api.app.security import PASSWORD_HASHER, generate_activation_code
 from api.app.services.email_dispatcher import EmailDispatcher
 
 logger = logging.getLogger(__name__)

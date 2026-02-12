@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from argon2 import PasswordHasher
 import pytest
 
-from api.app.services.activation_service import ActivationService
+from api.app.services import ActivationService
 
 pytestmark = pytest.mark.db_cleanup
 

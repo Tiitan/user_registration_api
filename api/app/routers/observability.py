@@ -9,7 +9,7 @@ from fastapi import APIRouter, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily, SummaryMetricFamily
 
-from api.app.observability.metrics import InMemoryMetricsRecorder, MetricsRecorder
+from api.app.observability import InMemoryMetricsRecorder, MetricsRecorder
 
 router = APIRouter(tags=["health"])
 

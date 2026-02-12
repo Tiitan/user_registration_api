@@ -6,11 +6,9 @@ from fastapi import APIRouter, Depends, Security, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from api.app.dependencies import get_activation_service, get_registration_service
-from api.app.exceptions.domain import InvalidCredentialsError
-from api.app.schemas.errors import ErrorResponse
-from api.app.schemas.users import ActivateUserRequest, ActivatedUserResponse, CreateUserRequest, UserResponse
-from api.app.services.activation_service import ActivationService
-from api.app.services.registration_service import RegistrationService
+from api.app.exceptions import InvalidCredentialsError
+from api.app.schemas import ActivateUserRequest, ActivatedUserResponse, CreateUserRequest, ErrorResponse, UserResponse
+from api.app.services import ActivationService, RegistrationService
 
 router = APIRouter(prefix="/v1/users", tags=["users"])
 logger = logging.getLogger(__name__)

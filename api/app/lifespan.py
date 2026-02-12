@@ -6,10 +6,10 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 
-from api.app.db.pool import create_mysql_pool_with_retry
+from api.app.db import create_mysql_pool_with_retry
 from api.app.integrations import MockEmailProvider
 from api.app.observability import InMemoryMetricsRecorder
-from api.app.services.email_dispatcher import EmailDispatcher
+from api.app.services import EmailDispatcher
 
 logger = logging.getLogger(__name__)
 

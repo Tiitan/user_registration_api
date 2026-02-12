@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from api.app.dependencies import get_db_pool, get_email_provider
 from api.app.integrations import EmailProvider
-from api.app.schemas.common import HeartbeatResponse
+from api.app.schemas import HeartbeatResponse
 
 router = APIRouter(tags=["health"])
 logger = logging.getLogger(__name__)

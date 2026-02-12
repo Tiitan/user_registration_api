@@ -1,8 +1,7 @@
 """Unit tests for shared password hasher wiring."""
 
-from api.app.services.activation_service import ActivationService
-from api.app.security.password_hasher import PASSWORD_HASHER
-from api.app.services.registration_service import RegistrationService
+from api.app.security import PASSWORD_HASHER
+from api.app.services import ActivationService, RegistrationService
 
 
 def test_services_use_shared_password_hasher_instance() -> None:

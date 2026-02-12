@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.app.config import get_settings
-from api.app.exceptions.handlers import register_exception_handlers
+from api.app.exceptions import register_exception_handlers
 from api.app.lifespan import lifespan
 from api.app.logging_config import configure_logging
 from api.app.observability import RequestContextMiddleware

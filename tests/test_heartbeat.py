@@ -6,8 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from api.app.routers.heartbeat import router as heartbeat_router
-from api.app.routers.observability import router as observability_router
+from api.app.routers import heartbeat_router, observability_router
 
 
 def test_heartbeat_returns_ok() -> None:
