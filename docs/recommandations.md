@@ -75,18 +75,6 @@ Most `__init__.py` files are empty.
 
 **Recommendation:** Add explicit `__all__` lists to make the public API of each module clearer, especially for `services/`, `repositories/`, and `exceptions/`.
 
-### 9. PasswordHasher instantiation per request
-
-`registration_service.py` creates a new `PasswordHasher()` instance on each request via `get_registration_service` in `dependencies.py`. `PasswordHasher` is stateless.
-
-**Recommendation:** Create it once at startup and inject it, or make it a module-level constant.
-
-### 10. Verify activation code randomness
-
-If `random.randint` is used instead of `secrets`, it is not cryptographically secure.
-
-**Recommendation:** Verify that activation codes are generated using `secrets.choice` or `secrets.randbelow`. This is a common interview discussion point.
-
 ---
 
 ## Testing
@@ -131,17 +119,3 @@ HTTP 4xx/5xx responses are not counted.
 The Postman collection is useful but can drift from the actual API.
 
 **Recommendation:** Generate it from the OpenAPI spec or add a note about keeping it in sync.
-
----
-
-## Minor Nits
-
-### 18. Starlette pinned separately in requirements.txt
-
-FastAPI already depends on Starlette. Pinning it separately risks version conflicts.
-
-**Recommendation:** Remove the explicit pin and let FastAPI manage its own Starlette dependency.
-
-### 19. Typo in git history
-
-Commit `3bcb98e` reads "osbervability" instead of "observability".

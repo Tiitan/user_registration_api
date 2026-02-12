@@ -1,11 +1,9 @@
 """Service handling account activation transactions."""
 
 import logging
-import secrets
 from datetime import datetime, timedelta
 
 import asyncmy
-from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
 
 from api.app.config import get_settings
@@ -19,6 +17,8 @@ from api.app.exceptions.domain import (
     UserNotFoundError,
 )
 from api.app.repositories import ActivationCodeRepository, UserRepository
+from api.app.security.activation_code_generator import generate_activation_code
+from api.app.security.password_hasher import PASSWORD_HASHER
 from api.app.schemas.users import ActivatedUserResponse
 from api.app.services.email_dispatcher import EmailDispatcher
 
@@ -35,7 +35,7 @@ class ActivationService:
         self._email_dispatcher = email_dispatcher
         self._activation_code_ttl_seconds = settings.activation_code_ttl_seconds
         self._activation_code_max_attempts = settings.activation_code_max_attempts
-        self._password_hasher = PasswordHasher()
+        self._password_hasher = PASSWORD_HASHER
         self._user_repository = UserRepository()
         self._activation_code_repository = ActivationCodeRepository()
 
@@ -69,7 +69,7 @@ class ActivationService:
                     raise ActivationCodeAttemptsExceededError()
 
                 if self._is_code_expired(code_row.sent_at):
-                    new_code = f"{secrets.randbelow(10_000):04d}"
+                    new_code = generate_activation_code()
                     new_activation_code_id = await self._activation_code_repository.create_code(cursor=cursor, user_id=user_id, code=new_code)
                     resend_info = (user_id, new_activation_code_id, user_email, new_code)
                     deferred_error = ActivationCodeExpiredError()

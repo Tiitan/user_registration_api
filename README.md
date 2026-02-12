@@ -12,6 +12,7 @@ Production-style FastAPI service for user registration and account activation wi
 
 Key folders:
 - `api/app`: FastAPI app, routers, services, repositories, DB access, observability
+- `api/app/security`: shared security primitives (Argon2 hasher, cryptographic activation-code generator)
 - `db/init`: MySQL schema initialization SQL
 - `scripts`: cleanup script and quality pipeline
 - `scripts/cron`: cron schedule and scheduler launcher

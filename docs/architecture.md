@@ -75,6 +75,7 @@ api/app/
   main.py                    -> app creation, lifespan, DI wiring
   routers/                   -> HTTP endpoints
   schemas/                   -> request/response validation
+  security/                  -> shared security primitives (password hasher, code generator)
   services/
     registration_service.py  -> registration + post-commit dispatch trigger
     activation_service.py    -> activation use case
@@ -257,7 +258,9 @@ Known limitation (best-effort):
 ## 10. Security
 
 - Password storage: `argon2id`.
+- Password hashing implementation: shared `PasswordHasher` singleton in `api/app/security/password_hasher.py`.
 - Activation code: plaintext in DB for this project scope.
+- Activation code generation: cryptographically secure generator in `api/app/security/activation_code_generator.py` using `secrets`.
 - Authentication: Basic Auth for activation endpoint.
 - Input validation:
   - email: `EmailStr`

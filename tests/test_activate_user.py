@@ -25,9 +25,10 @@ def _pin_now_to_latest_code_sent_at(*, monkeypatch, db_helper, email: str) -> No
 
 def test_activate_user_returns_200(client, db_helper, monkeypatch) -> None:
     """Activates a pending user with valid credentials and code."""
+    code = "1234"
+    monkeypatch.setattr("api.app.services.registration_service.generate_activation_code", lambda: code)
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
     _pin_now_to_latest_code_sent_at(monkeypatch=monkeypatch, db_helper=db_helper, email="user@example.com")
-    code = str(db_helper.latest_unused_activation_code("user@example.com")["code"])
 
     response = client.post("/v1/users/activate", auth=("user@example.com", "StrongPass123"), json={"code": code})
 
@@ -60,9 +61,10 @@ def test_activate_user_returns_404_when_user_not_found(client) -> None:
 
 def test_activate_user_returns_409_when_account_is_already_active(client, db_helper, monkeypatch) -> None:
     """Rejects activation when account is already active."""
+    code = "1234"
+    monkeypatch.setattr("api.app.services.registration_service.generate_activation_code", lambda: code)
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
     _pin_now_to_latest_code_sent_at(monkeypatch=monkeypatch, db_helper=db_helper, email="user@example.com")
-    code = str(db_helper.latest_unused_activation_code("user@example.com")["code"])
 
     first_activation = client.post("/v1/users/activate", auth=("user@example.com", "StrongPass123"), json={"code": code})
     assert first_activation.status_code == 200
@@ -74,10 +76,11 @@ def test_activate_user_returns_409_when_account_is_already_active(client, db_hel
 
 def test_activate_user_returns_400_when_code_mismatch(client, db_helper, monkeypatch) -> None:
     """Increments attempts and returns mismatch for wrong code."""
+    code = "1234"
+    monkeypatch.setattr("api.app.services.registration_service.generate_activation_code", lambda: code)
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
     _pin_now_to_latest_code_sent_at(monkeypatch=monkeypatch, db_helper=db_helper, email="user@example.com")
-    actual_code = str(db_helper.latest_unused_activation_code("user@example.com")["code"])
-    wrong_code = "0000" if actual_code != "0000" else "9999"
+    wrong_code = "0000"
 
     response = client.post("/v1/users/activate", auth=("user@example.com", "StrongPass123"), json={"code": wrong_code})
 
@@ -91,10 +94,11 @@ def test_activate_user_returns_400_when_code_mismatch(client, db_helper, monkeyp
 def test_activate_user_returns_400_when_attempts_exceeded(client, db_helper, monkeypatch) -> None:
     """Returns attempts exceeded after maximum failed tries."""
     settings = get_settings()
+    code = "1234"
+    monkeypatch.setattr("api.app.services.registration_service.generate_activation_code", lambda: code)
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
     _pin_now_to_latest_code_sent_at(monkeypatch=monkeypatch, db_helper=db_helper, email="user@example.com")
-    actual_code = str(db_helper.latest_unused_activation_code("user@example.com")["code"])
-    wrong_code = "0000" if actual_code != "0000" else "9999"
+    wrong_code = "0000"
 
     final_response = None
     for _ in range(settings.activation_code_max_attempts):

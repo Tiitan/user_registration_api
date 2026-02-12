@@ -1,14 +1,14 @@
 """Service handling user registration transactions."""
 
 import logging
-import secrets
 
 import asyncmy
-from argon2 import PasswordHasher
 
 from api.app.db.transaction import transactional_cursor
 from api.app.exceptions.domain import EmailAlreadyExistsError
 from api.app.repositories import ActivationCodeRepository, UserRepository
+from api.app.security.activation_code_generator import generate_activation_code
+from api.app.security.password_hasher import PASSWORD_HASHER
 from api.app.schemas.users import UserResponse
 from api.app.services.email_dispatcher import EmailDispatcher
 
@@ -22,15 +22,15 @@ class RegistrationService:
         """Initialize service dependencies."""
         self._db_pool = db_pool
         self._email_dispatcher = email_dispatcher
-        self.password_hasher = PasswordHasher()
+        self._password_hasher = PASSWORD_HASHER
         self._user_repository = UserRepository()
         self._activation_code_repository = ActivationCodeRepository()
 
     async def register_user(self, *, email: str, password: str) -> UserResponse:
         """Register a user and schedule an activation email."""
         logger.info("Starting registration transaction for email=%s", email)
-        password_hash = self.password_hasher.hash(password)
-        code = f"{secrets.randbelow(10_000):04d}"
+        password_hash = self._password_hasher.hash(password)
+        code = generate_activation_code()
 
         try:
             async with transactional_cursor(self._db_pool) as cursor:
