@@ -30,8 +30,12 @@ def _configure_mysql_host_for_test_environment() -> None:
 _configure_mysql_host_for_test_environment()
 get_settings.cache_clear()
 
-USERS_INTEGRATION_FILES = {"test_create_user.py", "test_activate_user.py", "test_observability.py"}
 main = importlib.import_module("api.app.main")
+
+
+def _is_users_integration_test(request: pytest.FixtureRequest) -> bool:
+    """Identify tests that require DB cleanup via explicit marker."""
+    return request.node.get_closest_marker("db_cleanup") is not None
 
 
 class DbHelper:
@@ -123,17 +127,15 @@ def db_helper() -> DbHelper:
 @pytest.fixture(autouse=True)
 def clean_tables_for_users_integration_tests(request: pytest.FixtureRequest, db_helper: DbHelper) -> None:
     """Clean user tables before each users integration test."""
-    if request.node.fspath.basename not in USERS_INTEGRATION_FILES:
+    if not _is_users_integration_test(request):
         return
     db_helper.execute("DELETE FROM activation_codes")
     db_helper.execute("DELETE FROM users")
 
 
 @pytest.fixture
-def client(request: pytest.FixtureRequest) -> Generator[TestClient, None, None]:
+def client() -> Generator[TestClient, None, None]:
     """Provide a TestClient with a helper to wait for background tasks."""
-    if request.node.fspath.basename not in USERS_INTEGRATION_FILES:
-        pytest.skip("Integration TestClient fixture is only for users integration tests.")
     with TestClient(main.app) as test_client:
         app = test_client.app
         assert isinstance(app, FastAPI)

@@ -7,6 +7,9 @@ import pytest
 
 from api.app.services.activation_service import ActivationService
 
+pytestmark = pytest.mark.db_cleanup
+
+
 def test_create_user_returns_201(client, db_helper) -> None:
     """Creates a pending user and activation code."""
     response = client.post("/v1/users", json={"email": "user@example.com", "password": "StrongPass123"})

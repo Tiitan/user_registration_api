@@ -7,6 +7,8 @@ import pytest
 from api.app.config import get_settings
 from api.app.services.activation_service import ActivationService
 
+pytestmark = pytest.mark.db_cleanup
+
 
 def _create_pending_user(client, *, email: str, password: str) -> None:
     """Create a pending user fixture via API."""

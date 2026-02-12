@@ -2,8 +2,12 @@
 
 import logging
 
+import pytest
+
 from api.app.observability import CORRELATION_ID_HEADER, REQUEST_ID_HEADER
 from api.app.observability.metrics import InMemoryMetricsRecorder
+
+pytestmark = pytest.mark.db_cleanup
 
 
 class _ApiLogPropagation:
