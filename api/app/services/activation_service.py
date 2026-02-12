@@ -2,7 +2,7 @@
 
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import asyncmy
 from argon2 import PasswordHasher
@@ -40,7 +40,7 @@ class ActivationService:
         self._activation_code_repository = ActivationCodeRepository()
 
     async def activate_user(self, *, email: str, password: str, code: str) -> ActivatedUserResponse:
-        """Activate a user or raise a domain error for invalid state."""
+        """Activate a user or raise a domain error for invalid state. resend new activation code if expired"""
         logger.info("Starting activation transaction for email=%s", email)
         resend_info: tuple[int, int, str, str] | None = None
         deferred_error: Exception | None = None
@@ -70,19 +70,12 @@ class ActivationService:
 
                 if self._is_code_expired(code_row.sent_at):
                     new_code = f"{secrets.randbelow(10_000):04d}"
-                    new_activation_code_id = await self._activation_code_repository.create_code(
-                        cursor=cursor,
-                        user_id=user_id,
-                        code=new_code,
-                    )
+                    new_activation_code_id = await self._activation_code_repository.create_code(cursor=cursor, user_id=user_id, code=new_code)
                     resend_info = (user_id, new_activation_code_id, user_email, new_code)
                     deferred_error = ActivationCodeExpiredError()
 
                 if deferred_error is None and code_row.code != code:
-                    await self._activation_code_repository.increment_attempt_count(
-                        cursor=cursor,
-                        activation_code_id=activation_code_id,
-                    )
+                    await self._activation_code_repository.increment_attempt_count(cursor=cursor, activation_code_id=activation_code_id)
                     if attempt_count + 1 >= self._activation_code_max_attempts:
                         deferred_error = ActivationCodeAttemptsExceededError()
                     else:
@@ -97,12 +90,7 @@ class ActivationService:
 
         if resend_info is not None:
             user_id, new_activation_code_id, user_email, new_code = resend_info
-            self._email_dispatcher.dispatch_activation_email(
-                user_id=user_id,
-                activation_code_id=new_activation_code_id,
-                recipient_email=user_email,
-                code=new_code,
-            )
+            self._email_dispatcher.dispatch_activation_email(user_id=user_id, activation_code_id=new_activation_code_id, recipient_email=user_email, code=new_code)
         if deferred_error is not None:
             raise deferred_error
 
@@ -122,16 +110,10 @@ class ActivationService:
         """Return whether the sent timestamp exceeds configured TTL."""
         if sent_at is None:
             return False
-        sent_at_utc = self._as_utc(sent_at)
-        now_utc = self._utc_now()
-        return now_utc > sent_at_utc + timedelta(seconds=self._activation_code_ttl_seconds)
+        if sent_at.tzinfo is not None:
+            raise RuntimeError("Timezone-aware activation sent_at is unsupported; expected naive local datetime")
+        return self._now() > sent_at + timedelta(seconds=self._activation_code_ttl_seconds)
 
-    def _as_utc(self, value: datetime) -> datetime:
-        """Normalize a datetime to UTC timezone."""
-        if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
-
-    def _utc_now(self) -> datetime:
-        """Return current UTC timestamp."""
-        return datetime.now(timezone.utc)
+    def _now(self) -> datetime:
+        """Return current server-local timestamp."""
+        return datetime.now()

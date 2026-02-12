@@ -35,9 +35,7 @@ class EmailDispatcher:
 
     def dispatch_activation_email(self, *, user_id: int, activation_code_id: int, recipient_email: str, code: str) -> None:
         """Schedule an activation email in a background task."""
-        task = asyncio.create_task(
-            self._run_dispatch(user_id=user_id, activation_code_id=activation_code_id, recipient_email=recipient_email, code=code)
-        )
+        task = asyncio.create_task(self._run_dispatch(user_id=user_id, activation_code_id=activation_code_id, recipient_email=recipient_email, code=code))
         self._background_tasks.add(task)
 
         def _on_done(done_task: asyncio.Task[None]) -> None:
@@ -165,7 +163,7 @@ class EmailDispatcher:
         return max(0.0, bounded_delay + jitter)
 
     async def aclose(self) -> None:
-        """Wait for in-flight background dispatch tasks to finish."""
+        """Wait for in-flight background dispatch tasks to finish. Application shutdown"""
         if not self._background_tasks:
             return
         pending = list(self._background_tasks)

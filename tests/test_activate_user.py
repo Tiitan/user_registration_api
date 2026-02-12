@@ -1,6 +1,8 @@
 """Integration tests for user activation endpoint."""
 
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from api.app.config import get_settings
 from api.app.services.activation_service import ActivationService
@@ -12,9 +14,17 @@ def _create_pending_user(client, *, email: str, password: str) -> None:
     assert response.status_code == 201
 
 
-def test_activate_user_returns_200(client, db_helper) -> None:
+def _pin_now_to_latest_code_sent_at(*, monkeypatch, db_helper, email: str) -> None:
+    """Pin service clock to latest code sent_at to keep code unexpired."""
+    sent_at = db_helper.latest_unused_activation_code(email)["sent_at"]
+    fake_now = sent_at if sent_at is not None else datetime.now(timezone.utc).replace(tzinfo=None)
+    monkeypatch.setattr(ActivationService, "_now", lambda self: fake_now)
+
+
+def test_activate_user_returns_200(client, db_helper, monkeypatch) -> None:
     """Activates a pending user with valid credentials and code."""
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
+    _pin_now_to_latest_code_sent_at(monkeypatch=monkeypatch, db_helper=db_helper, email="user@example.com")
     code = str(db_helper.latest_unused_activation_code("user@example.com")["code"])
 
     response = client.post("/v1/users/activate", auth=("user@example.com", "StrongPass123"), json={"code": code})
@@ -46,9 +56,10 @@ def test_activate_user_returns_404_when_user_not_found(client) -> None:
     assert response.json()["detail"]["error"] == "user_not_found"
 
 
-def test_activate_user_returns_409_when_account_is_already_active(client, db_helper) -> None:
+def test_activate_user_returns_409_when_account_is_already_active(client, db_helper, monkeypatch) -> None:
     """Rejects activation when account is already active."""
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
+    _pin_now_to_latest_code_sent_at(monkeypatch=monkeypatch, db_helper=db_helper, email="user@example.com")
     code = str(db_helper.latest_unused_activation_code("user@example.com")["code"])
 
     first_activation = client.post("/v1/users/activate", auth=("user@example.com", "StrongPass123"), json={"code": code})
@@ -59,9 +70,10 @@ def test_activate_user_returns_409_when_account_is_already_active(client, db_hel
     assert second_activation.json()["detail"]["error"] == "account_already_active"
 
 
-def test_activate_user_returns_400_when_code_mismatch(client, db_helper) -> None:
+def test_activate_user_returns_400_when_code_mismatch(client, db_helper, monkeypatch) -> None:
     """Increments attempts and returns mismatch for wrong code."""
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
+    _pin_now_to_latest_code_sent_at(monkeypatch=monkeypatch, db_helper=db_helper, email="user@example.com")
     actual_code = str(db_helper.latest_unused_activation_code("user@example.com")["code"])
     wrong_code = "0000" if actual_code != "0000" else "9999"
 
@@ -74,10 +86,11 @@ def test_activate_user_returns_400_when_code_mismatch(client, db_helper) -> None
     assert int(latest_code["attempt_count"]) == 1
 
 
-def test_activate_user_returns_400_when_attempts_exceeded(client, db_helper) -> None:
+def test_activate_user_returns_400_when_attempts_exceeded(client, db_helper, monkeypatch) -> None:
     """Returns attempts exceeded after maximum failed tries."""
     settings = get_settings()
     _create_pending_user(client, email="user@example.com", password="StrongPass123")
+    _pin_now_to_latest_code_sent_at(monkeypatch=monkeypatch, db_helper=db_helper, email="user@example.com")
     actual_code = str(db_helper.latest_unused_activation_code("user@example.com")["code"])
     wrong_code = "0000" if actual_code != "0000" else "9999"
 
@@ -103,11 +116,9 @@ def test_activate_user_returns_410_when_code_expired(client, db_helper, monkeypa
     old_code_id = int(old_code_row["id"])
     old_code = str(old_code_row["code"])
     sent_at = old_code_row["sent_at"]
-    if sent_at.tzinfo is None:
-        sent_at = sent_at.replace(tzinfo=timezone.utc)
     fake_now = sent_at + timedelta(seconds=settings.activation_code_ttl_seconds + 1)
 
-    monkeypatch.setattr(ActivationService, "_utc_now", lambda self: fake_now)
+    monkeypatch.setattr(ActivationService, "_now", lambda self: fake_now)
 
     response = client.post("/v1/users/activate", auth=("user@example.com", "StrongPass123"), json={"code": old_code})
 
@@ -120,6 +131,18 @@ def test_activate_user_returns_410_when_code_expired(client, db_helper, monkeypa
         "SELECT COUNT(*) FROM activation_codes ac JOIN users u ON u.id = ac.user_id WHERE u.email = %s",
         ("user@example.com",),
     )) == 2
+
+
+def test_is_code_expired_raises_for_timezone_aware_sent_at(client) -> None:
+    """Fails fast when sent_at is timezone-aware in local-time mode."""
+    service = ActivationService(
+        db_pool=client.app.state.db_pool,
+        email_dispatcher=client.app.state.email_dispatcher,
+    )
+    aware_sent_at = datetime.now(timezone.utc)
+
+    with pytest.raises(RuntimeError, match="Timezone-aware activation sent_at is unsupported"):
+        service._is_code_expired(aware_sent_at)
 
 
 def test_activate_user_requires_basic_auth(client) -> None:

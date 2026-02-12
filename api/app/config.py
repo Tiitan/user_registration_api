@@ -25,11 +25,7 @@ class Settings(BaseSettings):
     activation_code_ttl_seconds: int = 60
     activation_code_max_attempts: int = 5
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_prefix="",
-        case_sensitive=False,
-    )
+    model_config = SettingsConfigDict(env_file=".env", env_prefix="", case_sensitive=False)
 
 
 @lru_cache

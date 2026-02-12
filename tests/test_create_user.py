@@ -1,7 +1,11 @@
 """Integration tests for user registration endpoint."""
 
+from datetime import datetime, timezone
+
 from argon2 import PasswordHasher
 import pytest
+
+from api.app.services.activation_service import ActivationService
 
 def test_create_user_returns_201(client, db_helper) -> None:
     """Creates a pending user and activation code."""
@@ -23,12 +27,15 @@ def test_create_user_returns_201(client, db_helper) -> None:
     assert len(str(code_row["code"])) == 4
 
 
-def test_create_user_returns_409_when_email_already_active(client, db_helper) -> None:
+def test_create_user_returns_409_when_email_already_active(client, db_helper, monkeypatch) -> None:
     """Rejects registration when the account is already active."""
     create_response = client.post("/v1/users", json={"email": "active@example.com", "password": "StrongPass123"})
     assert create_response.status_code == 201
 
     code_row = db_helper.latest_unused_activation_code("active@example.com")
+    sent_at = code_row["sent_at"]
+    fake_now = sent_at if sent_at is not None else datetime.now(timezone.utc).replace(tzinfo=None)
+    monkeypatch.setattr(ActivationService, "_now", lambda self: fake_now)
     activate_response = client.post("/v1/users/activate", auth=("active@example.com", "StrongPass123"), json={"code": str(code_row["code"])})
     assert activate_response.status_code == 200
 

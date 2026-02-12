@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import cast
+from typing import Any, Iterator, cast
 
 from fastapi import APIRouter, Request, Response
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, generate_latest
@@ -20,7 +20,7 @@ class _InMemoryMetricsCollector:
     def __init__(self, metrics: InMemoryMetricsRecorder) -> None:
         self._metrics = metrics
 
-    def collect(self):  # type: ignore[no-untyped-def]
+    def collect(self) -> Iterator[Any]:
         counter_groups: dict[tuple[str, tuple[str, ...]], list[tuple[tuple[str, ...], float]]] = defaultdict(list)
         for (name, tags), value in self._metrics.snapshot_counters().items():
             label_names = tuple(label for label, _ in tags)

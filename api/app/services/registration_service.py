@@ -37,27 +37,15 @@ class RegistrationService:
                 existing_user = await self._user_repository.get_by_email_for_update(cursor=cursor, email=email)
 
                 if existing_user is None:
-                    user_id = await self._user_repository.create_pending_user(
-                        cursor=cursor,
-                        email=email,
-                        password_hash=password_hash,
-                    )
+                    user_id = await self._user_repository.create_pending_user(cursor=cursor, email=email, password_hash=password_hash)
                 else:
                     user_id = existing_user.id
                     if existing_user.status == "ACTIVE":
                         logger.warning("Registration rejected: email=%s is already active", email)
                         raise EmailAlreadyExistsError()
-                    await self._user_repository.update_pending_password(
-                        cursor=cursor,
-                        user_id=user_id,
-                        password_hash=password_hash,
-                    )
+                    await self._user_repository.update_pending_password(cursor=cursor, user_id=user_id, password_hash=password_hash)
 
-                activation_code_id = await self._activation_code_repository.create_code(
-                    cursor=cursor,
-                    user_id=user_id,
-                    code=code,
-                )
+                activation_code_id = await self._activation_code_repository.create_code(cursor=cursor, user_id=user_id, code=code)
             logger.info("Registration committed for email=%s user_id=%s", email, user_id)
         except Exception:
             logger.exception("Registration transaction failed for email=%s", email)
