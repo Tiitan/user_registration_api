@@ -1,18 +1,10 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Security, status
+from fastapi import APIRouter, Depends, Security, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from api.app.dependencies import get_activation_service, get_registration_service
-from api.app.exceptions.domain import (
-    AccountAlreadyActiveError,
-    ActivationCodeAttemptsExceededError,
-    ActivationCodeExpiredError,
-    ActivationCodeMismatchError,
-    EmailAlreadyExistsError,
-    InvalidCredentialsError,
-    UserNotFoundError,
-)
+from api.app.exceptions.domain import InvalidCredentialsError
 from api.app.schemas.errors import ErrorResponse
 from api.app.schemas.users import ActivateUserRequest, ActivatedUserResponse, CreateUserRequest, UserResponse
 from api.app.services.activation_service import ActivationService
@@ -54,20 +46,9 @@ http_basic = HTTPBasic(auto_error=False)
 )
 async def create_user(payload: CreateUserRequest, service: RegistrationService = Depends(get_registration_service)) -> UserResponse:
     logger.info("POST /v1/users requested for email=%s", payload.email)
-    try:
-        user = await service.register_user(email=payload.email, password=payload.password)
-        logger.info("POST /v1/users succeeded for email=%s user_id=%s", payload.email, user.id)
-        return user
-    except EmailAlreadyExistsError as exc:
-        logger.warning("POST /v1/users conflict for email=%s", payload.email)
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={
-                "error": "email_already_exists",
-                "message": "Email is already registered as an active account",
-                "details": None,
-            },
-        ) from exc
+    user = await service.register_user(email=payload.email, password=payload.password)
+    logger.info("POST /v1/users succeeded for email=%s user_id=%s", payload.email, user.id)
+    return user
 
 
 @router.post(
@@ -167,49 +148,9 @@ async def create_user(payload: CreateUserRequest, service: RegistrationService =
 )
 async def activate_user(payload: ActivateUserRequest, credentials: HTTPBasicCredentials | None = Security(http_basic), service: ActivationService = Depends(get_activation_service)) -> ActivatedUserResponse:
     if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "invalid_credentials", "message": "Invalid credentials", "details": None},
-            headers={"WWW-Authenticate": "Basic"},
-        )
+        raise InvalidCredentialsError()
 
     logger.info("POST /v1/users/activate requested for email=%s", credentials.username)
-    try:
-        user = await service.activate_user(email=credentials.username, password=credentials.password, code=payload.code)
-        logger.info("POST /v1/users/activate succeeded for email=%s user_id=%s", user.email, user.id)
-        return user
-    except InvalidCredentialsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "invalid_credentials", "message": "Invalid credentials", "details": None},
-            headers={"WWW-Authenticate": "Basic"},
-        ) from exc
-    except UserNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "user_not_found", "message": "User not found", "details": None},
-        ) from exc
-    except AccountAlreadyActiveError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail={"error": "account_already_active", "message": "Account already active", "details": None},
-        ) from exc
-    except ActivationCodeExpiredError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_410_GONE,
-            detail={"error": "activation_code_expired", "message": "Activation code expired", "details": None},
-        ) from exc
-    except ActivationCodeMismatchError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "activation_code_mismatch", "message": "Invalid activation code", "details": None},
-        ) from exc
-    except ActivationCodeAttemptsExceededError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "error": "activation_code_attempts_exceeded",
-                "message": "Activation code attempts exceeded",
-                "details": None,
-            },
-        ) from exc
+    user = await service.activate_user(email=credentials.username, password=credentials.password, code=payload.code)
+    logger.info("POST /v1/users/activate succeeded for email=%s user_id=%s", user.email, user.id)
+    return user

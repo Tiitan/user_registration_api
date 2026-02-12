@@ -80,7 +80,6 @@ api/app/
     activation_service.py    -> activation use case
     email_dispatcher.py      -> retries/backoff/concurrency-limited dispatch
   repositories/              -> SQL access layer
-  security/                  -> hashing + Basic Auth helpers
   exceptions/                -> domain errors + HTTP mapping
   db/                        -> pool, transaction helpers, migrations
   integrations/              -> email provider implementation(mocked)
@@ -206,7 +205,7 @@ Key behavior:
 
 ```text
 Client -> API: POST /v1/users/activate + Basic Auth
-API -> Security: verify credentials
+API -> verify credentials
 API -> Service: activate_user
 Service -> DB (tx): lock user + latest created code
 Service -> DB (tx): verify code, expiry, then set ACTIVE + used_at

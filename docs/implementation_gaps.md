@@ -2,11 +2,6 @@
 
 This section tracks architecture items that are documented but not implemented yet in the current codebase.
 
-### 1 Missing Module Boundaries
-
-- `security/` package (e.g., hashing/basic_auth helpers) is not implemented as separate modules; logic is currently inside services/routers.
-- `exceptions/handlers.py` is not implemented; HTTP mapping is handled inline in routers.
-
 ### 4 Observability Gaps
 
 - Structured logging with request/correlation IDs is not implemented.
