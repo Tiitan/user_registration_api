@@ -1,5 +1,7 @@
 """Tests for CORS configuration."""
 
+from typing import cast
+
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.app.config import Settings
@@ -24,5 +26,6 @@ def test_main_app_registers_cors_middleware() -> None:
     cors_middleware = next((middleware for middleware in app.user_middleware if middleware.cls is CORSMiddleware), None)
 
     assert cors_middleware is not None
-    assert "http://localhost:3000" in cors_middleware.kwargs["allow_origins"]
+    allow_origins = cast(list[str], cors_middleware.kwargs["allow_origins"])
+    assert "http://localhost:3000" in allow_origins
     assert cors_middleware.kwargs["allow_credentials"] is True

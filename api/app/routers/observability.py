@@ -26,33 +26,33 @@ class _InMemoryMetricsCollector:
             label_names = tuple(label for label, _ in tags)
             label_values = tuple(label_value for _, label_value in tags)
             counter_groups[(name, label_names)].append((label_values, value))
-        for (name, label_names), rows in sorted(counter_groups.items()):
-            family = CounterMetricFamily(name, f"{name} from in-memory recorder", labels=list(label_names))
-            for label_values, value in rows:
-                family.add_metric(list(label_values), value)
-            yield family
+        for (name, label_names), counter_rows in sorted(counter_groups.items()):
+            counter_family = CounterMetricFamily(name, f"{name} from in-memory recorder", labels=list(label_names))
+            for label_values, value in counter_rows:
+                counter_family.add_metric(list(label_values), value)
+            yield counter_family
 
         histogram_groups: dict[tuple[str, tuple[str, ...]], list[tuple[tuple[str, ...], int, float]]] = defaultdict(list)
         for (name, tags), snapshot in self._metrics.snapshot_histograms().items():
             label_names = tuple(label for label, _ in tags)
             label_values = tuple(label_value for _, label_value in tags)
             histogram_groups[(name, label_names)].append((label_values, snapshot.count, snapshot.total))
-        for (name, label_names), rows in sorted(histogram_groups.items()):
-            family = SummaryMetricFamily(name, f"{name} summary from in-memory recorder", labels=list(label_names))
-            for label_values, count_value, sum_value in rows:
-                family.add_metric(list(label_values), count_value=count_value, sum_value=sum_value)
-            yield family
+        for (name, label_names), histogram_rows in sorted(histogram_groups.items()):
+            summary_family = SummaryMetricFamily(name, f"{name} summary from in-memory recorder", labels=list(label_names))
+            for label_values, count_value, sum_value in histogram_rows:
+                summary_family.add_metric(list(label_values), count_value=count_value, sum_value=sum_value)
+            yield summary_family
 
         gauge_groups: dict[tuple[str, tuple[str, ...]], list[tuple[tuple[str, ...], float]]] = defaultdict(list)
         for (name, tags), value in self._metrics.snapshot_gauges().items():
             label_names = tuple(label for label, _ in tags)
             label_values = tuple(label_value for _, label_value in tags)
             gauge_groups[(name, label_names)].append((label_values, value))
-        for (name, label_names), rows in sorted(gauge_groups.items()):
-            family = GaugeMetricFamily(name, f"{name} from in-memory recorder", labels=list(label_names))
-            for label_values, value in rows:
-                family.add_metric(list(label_values), value)
-            yield family
+        for (name, label_names), gauge_rows in sorted(gauge_groups.items()):
+            gauge_family = GaugeMetricFamily(name, f"{name} from in-memory recorder", labels=list(label_names))
+            for label_values, value in gauge_rows:
+                gauge_family.add_metric(list(label_values), value)
+            yield gauge_family
 
 
 @router.get("/metrics", summary="Prometheus metrics", description="Prometheus scrape endpoint exposing in-process instrumentation metrics.")
