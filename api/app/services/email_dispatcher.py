@@ -6,15 +6,17 @@ import asyncmy
 
 from api.app.config import get_settings
 from api.app.db.transaction import transactional_cursor
+from api.app.integrations import EmailProvider
 from api.app.repositories import ActivationCodeRepository
 
 logger = logging.getLogger(__name__)
 
 
 class EmailDispatcher:
-    def __init__(self, db_pool: asyncmy.Pool) -> None:
+    def __init__(self, db_pool: asyncmy.Pool, email_provider: EmailProvider) -> None:
         settings = get_settings()
         self._db_pool = db_pool
+        self._email_provider = email_provider
         self._max_retries = settings.email_provider_max_retries
         self._retry_base_delay_seconds = settings.email_provider_retry_base_delay_seconds
         self._retry_max_delay_seconds = settings.email_provider_retry_max_delay_seconds
@@ -41,19 +43,12 @@ class EmailDispatcher:
 
     async def _run_dispatch(self, *, user_id: int, activation_code_id: int, recipient_email: str, code: str) -> None:
         async with self._dispatch_semaphore:
-            await self._send_activation_email(recipient_email=recipient_email, code=code, user_id=user_id, activation_code_id=activation_code_id)
+            await self._email_provider.send_activation_email(recipient_email=recipient_email, code=code, user_id=user_id, activation_code_id=activation_code_id)
             sent_at_marked = await self._mark_activation_code_sent_with_retries(activation_code_id=activation_code_id, user_id=user_id)
             if sent_at_marked:
                 logger.info("Activation email delivered user_id=%s activation_code_id=%s", user_id, activation_code_id)
             else:
-                logger.error("Activation email was simulated as sent but sent_at update failed user_id=%s activation_code_id=%s",
-                    user_id, activation_code_id)
-
-    async def _send_activation_email(self, *, recipient_email: str, code: str, user_id: int, activation_code_id: int) -> None:
-        # Mock of a third-party SMTP-over-HTTP provider call as allowed by specs.
-        logger.info("Simulated email provider HTTP request to=%s user_id=%s activation_code_id=%s code=%s",
-            recipient_email, user_id, activation_code_id, code)
-        await asyncio.sleep(0)
+                logger.error("Activation email was sent but sent_at update failed user_id=%s activation_code_id=%s", user_id, activation_code_id)
 
     async def _mark_activation_code_sent_with_retries(self, *, activation_code_id: int, user_id: int) -> bool:
         for attempt in range(1, self._max_retries + 1):

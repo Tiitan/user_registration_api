@@ -3,6 +3,7 @@ from datetime import timedelta, timezone
 from api.app.config import get_settings
 from api.app.services.activation_service import ActivationService
 
+
 def _create_pending_user(client, *, email: str, password: str) -> None:
     response = client.post("/v1/users", json={"email": email, "password": password})
     assert response.status_code == 201

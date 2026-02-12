@@ -43,6 +43,8 @@ Resilience baseline:
 Trade-off in baseline:
 - Simpler and faster to operate (no separate email worker runtime).
 - Email delivery is best-effort, not durable at-least-once.
+- after an email is successfully sent, if "sent_at" fails to be written into the database multiple times, then the code has no expiration 
+    (risk mitigation: code invalidated after 5 attempt and code deleted after 1h)
 
 
 ## 3. High-Level Architecture
@@ -64,7 +66,7 @@ The API persists business state in MySQL, then triggers asynchronous post-commit
 
 - API service (`FastAPI`): endpoints, validation, domain orchestration, DB writes, post-commit email dispatch.
 - MySQL: system of record for users and activation codes.
-- Email provider: external HTTP dependency used by API dispatch logic.
+- Email provider: external HTTP dependency used by API dispatch logic (mocked).
 
 ## 5. Internal Service Modules
 
@@ -81,6 +83,7 @@ api/app/
   security/                  -> hashing + Basic Auth helpers
   exceptions/                -> domain errors + HTTP mapping
   db/                        -> pool, transaction helpers, migrations
+  integrations/              -> email provider implementation(mocked)
 ```
 
 ## 6. Data Model
@@ -299,8 +302,8 @@ Lifespan-managed resources:
 ## 15. Periodic Cleanup
 
 - `registration_cleanup` every hour:
-  - delete abandoned pending users older than retention window (e.g., 24h)
-  - delete stale activation codes according to retention policy
+  - delete abandoned pending users older than retention window (24h)
+  - delete stale activation codes according to retention policy (1h)
 
 ## 16. Docker Topology
 

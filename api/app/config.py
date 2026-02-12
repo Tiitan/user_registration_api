@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     mysql_connect_retries: int = 3
     mysql_retry_delay_seconds: float = 1.0
     email_provider_max_retries: int = 3
-    email_provider_retry_base_delay_seconds: float = 0.2
-    email_provider_retry_max_delay_seconds: float = 2.0
+    email_provider_retry_base_delay_seconds: float = 1.0
+    email_provider_retry_max_delay_seconds: float = 8.0
     email_dispatch_max_concurrency: int = 50
     activation_code_ttl_seconds: int = 60
     activation_code_max_attempts: int = 5
