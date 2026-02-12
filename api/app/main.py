@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from api.app.db.lifespan import lifespan
+from api.app.lifespan import lifespan
 from api.app.logging_config import configure_logging
 from api.app.routers import heartbeat_router, users_router
 

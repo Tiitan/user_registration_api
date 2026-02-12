@@ -5,7 +5,6 @@ This section tracks architecture items that are documented but not implemented y
 ### 1 Missing Module Boundaries
 
 - `integrations/email_provider_client.py` is not implemented as a separate integration client.
-- `repositories/` SQL access layer package is not implemented; SQL currently lives in service classes.
 - `security/` package (e.g., hashing/basic_auth helpers) is not implemented as separate modules; logic is currently inside services/routers.
 - `exceptions/handlers.py` is not implemented; HTTP mapping is handled inline in routers.
 

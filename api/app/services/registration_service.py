@@ -3,9 +3,10 @@ import secrets
 
 import asyncmy
 from argon2 import PasswordHasher
-from asyncmy.cursors import DictCursor
 
+from api.app.db.transaction import transactional_cursor
 from api.app.exceptions.domain import EmailAlreadyExistsError
+from api.app.repositories import ActivationCodeRepository, UserRepository
 from api.app.schemas.users import UserResponse
 from api.app.services.email_dispatcher import EmailDispatcher
 
@@ -17,39 +18,44 @@ class RegistrationService:
         self._db_pool = db_pool
         self._email_dispatcher = email_dispatcher
         self.password_hasher = PasswordHasher()
+        self._user_repository = UserRepository()
+        self._activation_code_repository = ActivationCodeRepository()
 
     async def register_user(self, *, email: str, password: str) -> UserResponse:
         logger.info("Starting registration transaction for email=%s", email)
         password_hash = self.password_hasher.hash(password)
         code = f"{secrets.randbelow(10_000):04d}"
 
-        async with self._db_pool.acquire() as connection:
-            try:
-                await connection.begin()
-                async with connection.cursor(DictCursor) as cursor:
-                    await cursor.execute("SELECT id, status FROM users WHERE email = %s FOR UPDATE", (email,))
-                    existing_user = await cursor.fetchone()
+        try:
+            async with transactional_cursor(self._db_pool) as cursor:
+                existing_user = await self._user_repository.get_by_email_for_update(cursor=cursor, email=email)
 
-                    if existing_user is None:
-                        await cursor.execute("INSERT INTO users (email, password_hash, status) VALUES (%s, %s, 'PENDING')",
-                            (email, password_hash))
-                        user_id = int(cursor.lastrowid)
-                    else:
-                        user_id = int(existing_user["id"])
-                        if existing_user["status"] == "ACTIVE":
-                            logger.warning("Registration rejected: email=%s is already active", email)
-                            raise EmailAlreadyExistsError()
-                        await cursor.execute("UPDATE users SET password_hash = %s WHERE id = %s AND status = 'PENDING'",
-                            (password_hash, user_id))
+                if existing_user is None:
+                    user_id = await self._user_repository.create_pending_user(
+                        cursor=cursor,
+                        email=email,
+                        password_hash=password_hash,
+                    )
+                else:
+                    user_id = existing_user.id
+                    if existing_user.status == "ACTIVE":
+                        logger.warning("Registration rejected: email=%s is already active", email)
+                        raise EmailAlreadyExistsError()
+                    await self._user_repository.update_pending_password(
+                        cursor=cursor,
+                        user_id=user_id,
+                        password_hash=password_hash,
+                    )
 
-                    await cursor.execute("INSERT INTO activation_codes (user_id, code) VALUES (%s, %s)", (user_id, code))
-                    activation_code_id = int(cursor.lastrowid)
-                await connection.commit()
-                logger.info("Registration committed for email=%s user_id=%s", email, user_id)
-            except Exception:
-                logger.exception("Registration transaction failed for email=%s", email)
-                await connection.rollback()
-                raise
+                activation_code_id = await self._activation_code_repository.create_code(
+                    cursor=cursor,
+                    user_id=user_id,
+                    code=code,
+                )
+            logger.info("Registration committed for email=%s user_id=%s", email, user_id)
+        except Exception:
+            logger.exception("Registration transaction failed for email=%s", email)
+            raise
 
         self._email_dispatcher.dispatch_activation_email(user_id=user_id, activation_code_id=activation_code_id, recipient_email=email, code=code)
 

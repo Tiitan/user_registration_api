@@ -3,9 +3,10 @@ import logging
 import secrets
 
 import asyncmy
-from asyncmy.cursors import DictCursor
 
 from api.app.config import get_settings
+from api.app.db.transaction import transactional_cursor
+from api.app.repositories import ActivationCodeRepository
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ class EmailDispatcher:
         self._retry_max_delay_seconds = settings.email_provider_retry_max_delay_seconds
         self._dispatch_semaphore = asyncio.Semaphore(settings.email_dispatch_max_concurrency)
         self._background_tasks: set[asyncio.Task[None]] = set()
+        self._activation_code_repository = ActivationCodeRepository()
 
     def dispatch_activation_email(self, *, user_id: int, activation_code_id: int, recipient_email: str, code: str) -> None:
         task = asyncio.create_task(
@@ -68,16 +70,8 @@ class EmailDispatcher:
         return False
 
     async def _mark_activation_code_sent(self, *, activation_code_id: int) -> None:
-        async with self._db_pool.acquire() as connection:
-            await connection.begin()
-            try:
-                async with connection.cursor(DictCursor) as cursor:
-                    await cursor.execute("UPDATE activation_codes SET sent_at = CURRENT_TIMESTAMP(6) WHERE id = %s AND sent_at IS NULL",
-                        (activation_code_id,))
-                await connection.commit()
-            except Exception:
-                await connection.rollback()
-                raise
+        async with transactional_cursor(self._db_pool) as cursor:
+            await self._activation_code_repository.mark_sent(cursor=cursor, activation_code_id=activation_code_id)
 
     def _compute_retry_delay_seconds(self, *, attempt: int) -> float:
         raw_delay = self._retry_base_delay_seconds * (2 ** (attempt - 1))
