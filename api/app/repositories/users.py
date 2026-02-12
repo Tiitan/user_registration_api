@@ -51,3 +51,27 @@ class UserRepository:
             "UPDATE users SET status = 'ACTIVE', activated_at = CURRENT_TIMESTAMP(6) WHERE id = %s AND status = 'PENDING'",
             (user_id,),
         )
+
+    async def count_stale_pending_users(self, *, cursor: Any, retention_hours: int) -> int:
+        """Count pending users older than the configured retention window."""
+        await cursor.execute(
+            "SELECT COUNT(*) AS count "
+            "FROM users "
+            "WHERE status = 'PENDING' "
+            "AND created_at < (CURRENT_TIMESTAMP(6) - INTERVAL %s HOUR)",
+            (retention_hours,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return 0
+        return int(row["count"])
+
+    async def delete_stale_pending_users(self, *, cursor: Any, retention_hours: int) -> int:
+        """Delete pending users older than the configured retention window."""
+        await cursor.execute(
+            "DELETE FROM users "
+            "WHERE status = 'PENDING' "
+            "AND created_at < (CURRENT_TIMESTAMP(6) - INTERVAL %s HOUR)",
+            (retention_hours,),
+        )
+        return int(cursor.rowcount)

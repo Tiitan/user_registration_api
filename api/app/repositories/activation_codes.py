@@ -73,3 +73,25 @@ class ActivationCodeRepository:
         if row is None:
             return 0
         return int(row["undelivered_count"])
+
+    async def count_stale_activation_codes(self, *, cursor: Any, retention_hours: int) -> int:
+        """Count activation codes older than the configured retention window."""
+        await cursor.execute(
+            "SELECT COUNT(*) AS count "
+            "FROM activation_codes "
+            "WHERE created_at < (CURRENT_TIMESTAMP(6) - INTERVAL %s HOUR)",
+            (retention_hours,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return 0
+        return int(row["count"])
+
+    async def delete_stale_activation_codes(self, *, cursor: Any, retention_hours: int) -> int:
+        """Delete activation codes older than the configured retention window."""
+        await cursor.execute(
+            "DELETE FROM activation_codes "
+            "WHERE created_at < (CURRENT_TIMESTAMP(6) - INTERVAL %s HOUR)",
+            (retention_hours,),
+        )
+        return int(cursor.rowcount)
