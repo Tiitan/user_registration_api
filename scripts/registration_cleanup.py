@@ -7,10 +7,8 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
+from api.app.db import MySqlUnitOfWorkFactory
 from api.app.db.pool import create_mysql_pool_with_retry
-from api.app.db.transaction import transactional_cursor
-from api.app.repositories.activation_codes import ActivationCodeRepository
-from api.app.repositories.users import UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -40,15 +38,14 @@ async def run_cleanup(*, pending_user_retention_hours: int, activation_code_rete
 
     db_pool = await create_mysql_pool_with_retry()
     try:
-        user_repository = UserRepository()
-        activation_code_repository = ActivationCodeRepository()
-        async with transactional_cursor(db_pool) as cursor:
+        uow_factory = MySqlUnitOfWorkFactory(db_pool)
+        async with uow_factory.cleanup() as cleanup_port:
             if dry_run:
-                pending_users = await user_repository.count_stale_pending_users(cursor=cursor, retention_hours=pending_user_retention_hours)
-                stale_activation_codes = await activation_code_repository.count_stale_activation_codes(cursor=cursor, retention_hours=activation_code_retention_hours)
+                pending_users = await cleanup_port.count_stale_pending_users(retention_hours=pending_user_retention_hours)
+                stale_activation_codes = await cleanup_port.count_stale_activation_codes(retention_hours=activation_code_retention_hours)
             else:
-                pending_users = await user_repository.delete_stale_pending_users(cursor=cursor, retention_hours=pending_user_retention_hours)
-                stale_activation_codes = await activation_code_repository.delete_stale_activation_codes(cursor=cursor, retention_hours=activation_code_retention_hours)
+                pending_users = await cleanup_port.delete_stale_pending_users(retention_hours=pending_user_retention_hours)
+                stale_activation_codes = await cleanup_port.delete_stale_activation_codes(retention_hours=activation_code_retention_hours)
 
         return CleanupResult(pending_users=pending_users, stale_activation_codes=stale_activation_codes, dry_run=dry_run)
     finally:

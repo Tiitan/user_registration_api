@@ -5,13 +5,10 @@ import logging
 import secrets
 from time import perf_counter
 
-import asyncmy
-
 from api.app.config import get_settings
-from api.app.db import transactional_cursor
 from api.app.integrations import EmailProvider
 from api.app.observability import MetricsRecorder, NoOpMetricsRecorder
-from api.app.repositories import ActivationCodeRepository
+from api.app.unit_of_work import UnitOfWorkFactory
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +16,10 @@ logger = logging.getLogger(__name__)
 class EmailDispatcher:
     """Dispatch activation emails with retries and metrics."""
 
-    def __init__(self, db_pool: asyncmy.Pool, email_provider: EmailProvider, *, metrics: MetricsRecorder | None = None, provider_name: str | None = None) -> None:
+    def __init__(self, uow_factory: UnitOfWorkFactory, email_provider: EmailProvider, *, metrics: MetricsRecorder | None = None, provider_name: str | None = None) -> None:
         """Initialize dispatcher dependencies and retry settings."""
         settings = get_settings()
-        self._db_pool = db_pool
+        self._uow_factory = uow_factory
         self._email_provider = email_provider
         self._provider_name = provider_name or email_provider.__class__.__name__.lower()
         self._metrics: MetricsRecorder = metrics or NoOpMetricsRecorder()
@@ -31,7 +28,6 @@ class EmailDispatcher:
         self._retry_max_delay_seconds = settings.email_provider_retry_max_delay_seconds
         self._dispatch_semaphore = asyncio.Semaphore(settings.email_dispatch_max_concurrency)
         self._background_tasks: set[asyncio.Task[None]] = set()
-        self._activation_code_repository = ActivationCodeRepository()
 
     def dispatch_activation_email(self, *, user_id: int, activation_code_id: int, recipient_email: str, code: str) -> None:
         """Schedule an activation email in a background task."""
@@ -141,14 +137,14 @@ class EmailDispatcher:
 
     async def _mark_activation_code_sent(self, *, activation_code_id: int) -> None:
         """Persist `sent_at` for a delivered activation code."""
-        async with transactional_cursor(self._db_pool) as cursor:
-            await self._activation_code_repository.mark_sent(cursor=cursor, activation_code_id=activation_code_id)
+        async with self._uow_factory.dispatch() as dispatch_port:
+            await dispatch_port.mark_activation_code_sent(activation_code_id=activation_code_id)
 
     async def _refresh_undelivered_activation_codes_metric(self) -> None:
         """Update gauge with current number of undelivered codes."""
         try:
-            async with transactional_cursor(self._db_pool) as cursor:
-                undelivered_count = await self._activation_code_repository.count_undelivered(cursor=cursor)
+            async with self._uow_factory.dispatch() as dispatch_port:
+                undelivered_count = await dispatch_port.count_undelivered_activation_codes()
         except Exception:
             logger.exception("Failed to refresh activation_codes_undelivered metric", extra={"event": "metrics_refresh_failed"})
             return

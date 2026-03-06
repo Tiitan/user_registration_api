@@ -8,11 +8,17 @@ from fastapi import Request
 from api.app.integrations import EmailProvider
 from api.app.observability import MetricsRecorder
 from api.app.services import ActivationService, EmailDispatcher, RegistrationService
+from api.app.unit_of_work import UnitOfWorkFactory
 
 
 def get_db_pool(request: Request) -> asyncmy.Pool:
     """Return the initialized database pool from app state."""
     return cast(asyncmy.Pool, request.app.state.db_pool)
+
+
+def get_uow_factory(request: Request) -> UnitOfWorkFactory:
+    """Return the initialized unit of work factory from app state."""
+    return cast(UnitOfWorkFactory, request.app.state.uow_factory)
 
 
 def get_email_dispatcher(request: Request) -> EmailDispatcher:
@@ -32,9 +38,9 @@ def get_metrics_recorder(request: Request) -> MetricsRecorder:
 
 def get_registration_service(request: Request) -> RegistrationService:
     """Create a registration service with request-scoped dependencies."""
-    return RegistrationService(db_pool=get_db_pool(request), email_dispatcher=get_email_dispatcher(request))
+    return RegistrationService(uow_factory=get_uow_factory(request), email_dispatcher=get_email_dispatcher(request))
 
 
 def get_activation_service(request: Request) -> ActivationService:
     """Create an activation service with request-scoped dependencies."""
-    return ActivationService(db_pool=get_db_pool(request), email_dispatcher=get_email_dispatcher(request))
+    return ActivationService(uow_factory=get_uow_factory(request), email_dispatcher=get_email_dispatcher(request))

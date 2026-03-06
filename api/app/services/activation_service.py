@@ -3,11 +3,9 @@
 import logging
 from datetime import datetime, timedelta
 
-import asyncmy
 from argon2.exceptions import VerificationError, VerifyMismatchError
 
 from api.app.config import get_settings
-from api.app.db import transactional_cursor
 from api.app.exceptions import (
     AccountAlreadyActiveError,
     ActivationCodeAttemptsExceededError,
@@ -16,10 +14,10 @@ from api.app.exceptions import (
     InvalidCredentialsError,
     UserNotFoundError,
 )
-from api.app.repositories import ActivationCodeRepository, UserRepository
 from api.app.schemas import ActivatedUserResponse
 from api.app.security import PASSWORD_HASHER, generate_activation_code
 from api.app.services.email_dispatcher import EmailDispatcher
+from api.app.unit_of_work import UnitOfWorkFactory
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +25,14 @@ logger = logging.getLogger(__name__)
 class ActivationService:
     """Activate pending users using password and activation code."""
 
-    def __init__(self, db_pool: asyncmy.Pool, email_dispatcher: EmailDispatcher) -> None:
+    def __init__(self, uow_factory: UnitOfWorkFactory, email_dispatcher: EmailDispatcher) -> None:
         """Initialize service dependencies and activation policy."""
         settings = get_settings()
-        self._db_pool = db_pool
+        self._uow_factory = uow_factory
         self._email_dispatcher = email_dispatcher
         self._activation_code_ttl_seconds = settings.activation_code_ttl_seconds
         self._activation_code_max_attempts = settings.activation_code_max_attempts
         self._password_hasher = PASSWORD_HASHER
-        self._user_repository = UserRepository()
-        self._activation_code_repository = ActivationCodeRepository()
 
     async def activate_user(self, *, email: str, password: str, code: str) -> ActivatedUserResponse:
         """Activate a user or raise a domain error for invalid state. resend new activation code if expired"""
@@ -47,8 +43,8 @@ class ActivationService:
         user_email: str | None = None
 
         try:
-            async with transactional_cursor(self._db_pool) as cursor:
-                user_row = await self._user_repository.get_by_email_for_update(cursor=cursor, email=email)
+            async with self._uow_factory.activation() as activation_port:
+                user_row = await activation_port.get_user_by_email_for_update(email=email)
                 if user_row is None:
                     raise UserNotFoundError()
                 user_id = user_row.id
@@ -58,7 +54,7 @@ class ActivationService:
                 if user_row.status == "ACTIVE":
                     raise AccountAlreadyActiveError()
 
-                code_row = await self._activation_code_repository.get_latest_for_update(cursor=cursor, user_id=user_id)
+                code_row = await activation_port.get_latest_activation_code_for_update(user_id=user_id)
                 if code_row is None:
                     raise ActivationCodeMismatchError()
 
@@ -69,20 +65,20 @@ class ActivationService:
 
                 if self._is_code_expired(code_row.sent_at):
                     new_code = generate_activation_code()
-                    new_activation_code_id = await self._activation_code_repository.create_code(cursor=cursor, user_id=user_id, code=new_code)
+                    new_activation_code_id = await activation_port.create_activation_code(user_id=user_id, code=new_code)
                     resend_info = (user_id, new_activation_code_id, user_email, new_code)
                     deferred_error = ActivationCodeExpiredError()
 
                 if deferred_error is None and code_row.code != code:
-                    await self._activation_code_repository.increment_attempt_count(cursor=cursor, activation_code_id=activation_code_id)
+                    await activation_port.increment_activation_attempt_count(activation_code_id=activation_code_id)
                     if attempt_count + 1 >= self._activation_code_max_attempts:
                         deferred_error = ActivationCodeAttemptsExceededError()
                     else:
                         deferred_error = ActivationCodeMismatchError()
 
                 if deferred_error is None:
-                    await self._activation_code_repository.mark_used(cursor=cursor, activation_code_id=activation_code_id)
-                    await self._user_repository.mark_user_as_active(cursor=cursor, user_id=user_id)
+                    await activation_port.mark_activation_code_used(activation_code_id=activation_code_id)
+                    await activation_port.mark_user_as_active(user_id=user_id)
         except Exception as error:
             logger.exception("Activation transaction failed for email=%s, error:%s", email, error)
             raise

@@ -142,7 +142,7 @@ def test_activate_user_returns_410_when_code_expired(client, db_helper, monkeypa
 def test_is_code_expired_raises_for_timezone_aware_sent_at(client) -> None:
     """Fails fast when sent_at is timezone-aware in local-time mode."""
     service = ActivationService(
-        db_pool=client.app.state.db_pool,
+        uow_factory=client.app.state.uow_factory,
         email_dispatcher=client.app.state.email_dispatcher,
     )
     aware_sent_at = datetime.now(timezone.utc)
