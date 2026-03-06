@@ -3,6 +3,8 @@
 import asyncio
 import logging
 import secrets
+from dataclasses import dataclass
+from enum import Enum
 from time import perf_counter
 
 from api.app.config import get_settings
@@ -11,6 +13,36 @@ from api.app.observability import MetricsRecorder, NoOpMetricsRecorder
 from api.app.unit_of_work import UnitOfWorkFactory
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _DispatchContext:
+    """Immutable context for a single dispatch run."""
+
+    user_id: int
+    activation_code_id: int
+    recipient_email: str
+    code: str
+    provider: str
+    tags: dict[str, str]
+
+
+class _DispatchOutcomeKind(str, Enum):
+    """Outcome kinds produced by the dispatch workflow."""
+
+    SUCCESS = "success"
+    PROVIDER_FAILURE = "provider_failure"
+    PERSISTENCE_FAILURE = "persistence_failure"
+
+
+@dataclass(frozen=True)
+class _DispatchOutcome:
+    """Result details for dispatch stages and completion."""
+
+    kind: _DispatchOutcomeKind
+    duration_ms: float
+    error_type: str | None = None
+    error: Exception | None = None
 
 
 class EmailDispatcher:
@@ -48,68 +80,22 @@ class EmailDispatcher:
     async def _run_dispatch(self, *, user_id: int, activation_code_id: int, recipient_email: str, code: str) -> None:
         """Run one dispatch attempt and record outcomes."""
         async with self._dispatch_semaphore:
-            tags = {"provider": self._provider_name}
-            self._metrics.inc("dispatch_attempts_total", tags=tags)
-            logger.info("Activation email dispatch started user_id=%s activation_code_id=%s",
-                user_id, activation_code_id, extra={"event": "dispatch_attempt", "user_id": user_id, "activation_code_id": activation_code_id, "provider": self._provider_name})
-            started = perf_counter()
+            context = self._build_context(user_id=user_id, activation_code_id=activation_code_id, recipient_email=recipient_email, code=code)
+            self._emit_dispatch_started(context)
             try:
-                await self._email_provider.send_activation_email(recipient_email=recipient_email, code=code, user_id=user_id, activation_code_id=activation_code_id)
-            except Exception as exc:
-                duration_ms = (perf_counter() - started) * 1000
-                self._metrics.observe("provider_latency_ms", duration_ms, tags=tags)
-                error_type = exc.__class__.__name__
-                self._metrics.inc("provider_errors_total", tags={"provider": self._provider_name, "error_type": error_type})
-                self._metrics.inc("dispatch_terminal_failures_total", tags=tags)
-                logger.exception(
-                    "Activation email provider call failed user_id=%s activation_code_id=%s",
-                    user_id,
-                    activation_code_id,
-                    extra={
-                        "event": "dispatch_failure_terminal",
-                        "user_id": user_id,
-                        "activation_code_id": activation_code_id,
-                        "provider": self._provider_name,
-                        "error_type": error_type,
-                        "duration_ms": round(duration_ms, 3),
-                    },
-                )
+                provider_outcome = await self._send_provider_email_with_retries(context)
+                if provider_outcome.kind is _DispatchOutcomeKind.PROVIDER_FAILURE:
+                    self._emit_provider_failure(context, provider_outcome)
+                    return
+
+                sent_at_marked = await self._mark_activation_code_sent_with_retries(activation_code_id=context.activation_code_id, user_id=context.user_id)
+                if sent_at_marked:
+                    completion_outcome = _DispatchOutcome(kind=_DispatchOutcomeKind.SUCCESS, duration_ms=provider_outcome.duration_ms)
+                else:
+                    completion_outcome = _DispatchOutcome(kind=_DispatchOutcomeKind.PERSISTENCE_FAILURE, duration_ms=provider_outcome.duration_ms)
+                self._emit_dispatch_completed(context, completion_outcome)
+            finally:
                 await self._refresh_undelivered_activation_codes_metric()
-                return
-
-            duration_ms = (perf_counter() - started) * 1000
-            self._metrics.observe("provider_latency_ms", duration_ms, tags=tags)
-
-            sent_at_marked = await self._mark_activation_code_sent_with_retries(activation_code_id=activation_code_id, user_id=user_id)
-            if sent_at_marked:
-                self._metrics.inc("dispatch_successes_total", tags=tags)
-                logger.info(
-                    "Activation email delivered user_id=%s activation_code_id=%s",
-                    user_id,
-                    activation_code_id,
-                    extra={
-                        "event": "dispatch_success",
-                        "user_id": user_id,
-                        "activation_code_id": activation_code_id,
-                        "provider": self._provider_name,
-                        "duration_ms": round(duration_ms, 3),
-                    },
-                )
-            else:
-                self._metrics.inc("dispatch_terminal_failures_total", tags=tags)
-                logger.error(
-                    "Activation email was sent but sent_at update failed user_id=%s activation_code_id=%s",
-                    user_id,
-                    activation_code_id,
-                    extra={
-                        "event": "dispatch_failure_terminal",
-                        "user_id": user_id,
-                        "activation_code_id": activation_code_id,
-                        "provider": self._provider_name,
-                        "duration_ms": round(duration_ms, 3),
-                    },
-                )
-            await self._refresh_undelivered_activation_codes_metric()
 
     async def _mark_activation_code_sent_with_retries(self, *, activation_code_id: int, user_id: int) -> bool:
         """Retry sent-at persistence with exponential backoff and jitter."""
@@ -119,21 +105,115 @@ class EmailDispatcher:
                 return True
             except Exception as exc:
                 final_attempt = attempt >= self._max_retries
-                logger.warning(
-                    "sent_at update failed user_id=%s activation_code_id=%s attempt=%s/%s error=%s",
-                    user_id, activation_code_id, attempt, self._max_retries, str(exc),
-                    extra={
-                        "event": "dispatch_sent_at_retry",
-                        "user_id": user_id,
-                        "activation_code_id": activation_code_id,
-                        "provider": self._provider_name,
-                        "error_type": exc.__class__.__name__,
-                    },
-                )
+                self._log_sent_at_retry_failure(activation_code_id=activation_code_id, user_id=user_id, attempt=attempt, error=exc)
                 if final_attempt:
                     return False
                 await asyncio.sleep(self._compute_retry_delay_seconds(attempt=attempt))
         return False
+
+    def _build_context(self, *, user_id: int, activation_code_id: int, recipient_email: str, code: str) -> _DispatchContext:
+        """Build immutable dispatch context for this run."""
+        provider = self._provider_name
+        return _DispatchContext(user_id=user_id, activation_code_id=activation_code_id, recipient_email=recipient_email, code=code, provider=provider, tags={"provider": provider})
+
+    async def _send_provider_email_with_retries(self, context: _DispatchContext) -> _DispatchOutcome:
+        """Send activation email with retry loop for transient provider errors."""
+        for attempt in range(1, self._max_retries + 1):
+            started = perf_counter()
+            try:
+                await self._email_provider.send_activation_email(recipient_email=context.recipient_email, code=context.code, user_id=context.user_id, activation_code_id=context.activation_code_id)
+                return _DispatchOutcome(kind=_DispatchOutcomeKind.SUCCESS, duration_ms=(perf_counter() - started) * 1000)
+            except Exception as error:
+                duration_ms = (perf_counter() - started) * 1000
+                final_attempt = attempt >= self._max_retries
+                if final_attempt or not self._is_retryable_provider_error(error):
+                    return _DispatchOutcome(kind=_DispatchOutcomeKind.PROVIDER_FAILURE, duration_ms=duration_ms, error_type=error.__class__.__name__, error=error)
+                self._metrics.inc("provider_retry_attempt_failures_total", tags={"provider": context.provider, "error_type": error.__class__.__name__})
+                self._log_provider_retry_failure(context=context, attempt=attempt, error=error)
+                await asyncio.sleep(self._compute_retry_delay_seconds(attempt=attempt))
+        return _DispatchOutcome(kind=_DispatchOutcomeKind.PROVIDER_FAILURE, duration_ms=0.0, error_type="RetriesExhausted", error=None)
+
+    def _is_retryable_provider_error(self, error: Exception) -> bool:
+        """Return whether provider error should be retried."""
+        return isinstance(error, (TimeoutError, ConnectionError, OSError))
+
+    def _emit_dispatch_started(self, context: _DispatchContext) -> None:
+        """Record and log dispatch start."""
+        self._metrics.inc("dispatch_attempts_total", tags=context.tags)
+        extra = self._dispatch_log_extra(context=context, event="dispatch_attempt")
+        logger.info("Activation email dispatch started user_id=%s activation_code_id=%s", context.user_id, context.activation_code_id, extra=extra)
+
+    def _emit_provider_latency(self, context: _DispatchContext, *, duration_ms: float) -> None:
+        """Observe provider call latency."""
+        self._metrics.observe("provider_latency_ms", duration_ms, tags=context.tags)
+
+    def _emit_provider_failure(self, context: _DispatchContext, outcome: _DispatchOutcome) -> None:
+        """Record metrics and logs for terminal provider failures."""
+        self._emit_provider_latency(context, duration_ms=outcome.duration_ms)
+        error_type = outcome.error_type or "UnknownError"
+        self._metrics.inc("provider_errors_total", tags={"provider": context.provider, "error_type": error_type})
+        self._metrics.inc("dispatch_terminal_failures_total", tags=context.tags)
+        extra = self._dispatch_log_extra(context=context, event="dispatch_failure_terminal", error_type=error_type, duration_ms=outcome.duration_ms)
+        if outcome.error is None:
+            logger.error("Activation email provider call failed user_id=%s activation_code_id=%s", context.user_id, context.activation_code_id, extra=extra)
+            return
+        error_info = (type(outcome.error), outcome.error, outcome.error.__traceback__)
+        logger.error("Activation email provider call failed user_id=%s activation_code_id=%s", context.user_id, context.activation_code_id, extra=extra, exc_info=error_info)
+
+    def _emit_dispatch_completed(self, context: _DispatchContext, outcome: _DispatchOutcome) -> None:
+        """Record completion observability for success and persistence failures."""
+        self._emit_provider_latency(context, duration_ms=outcome.duration_ms)
+        extra = self._dispatch_log_extra(context=context, event="dispatch_success", duration_ms=outcome.duration_ms)
+        if outcome.kind is _DispatchOutcomeKind.SUCCESS:
+            self._metrics.inc("dispatch_successes_total", tags=context.tags)
+            logger.info("Activation email delivered user_id=%s activation_code_id=%s", context.user_id, context.activation_code_id, extra=extra)
+            return
+        self._metrics.inc("dispatch_terminal_failures_total", tags=context.tags)
+        extra = self._dispatch_log_extra(context=context, event="dispatch_failure_terminal", duration_ms=outcome.duration_ms)
+        logger.error("Activation email was sent but sent_at update failed user_id=%s activation_code_id=%s", context.user_id, context.activation_code_id, extra=extra)
+
+    def _dispatch_log_extra(self, *, context: _DispatchContext, event: str, duration_ms: float | None = None, error_type: str | None = None) -> dict[str, object]:
+        """Build common structured log payload for dispatch events."""
+        extra: dict[str, object] = {"event": event, "user_id": context.user_id, "activation_code_id": context.activation_code_id, "provider": context.provider}
+        if error_type is not None:
+            extra["error_type"] = error_type
+        if duration_ms is not None:
+            extra["duration_ms"] = round(duration_ms, 3)
+        return extra
+
+    def _sent_at_retry_extra(self, *, activation_code_id: int, user_id: int, error: Exception) -> dict[str, object]:
+        """Build retry failure structured log payload."""
+        return {"event": "dispatch_sent_at_retry", "user_id": user_id, "activation_code_id": activation_code_id, "provider": self._provider_name, "error_type": error.__class__.__name__}
+
+    def _log_sent_at_retry_failure(self, *, activation_code_id: int, user_id: int, attempt: int, error: Exception) -> None:
+        """Log sent_at retry failure with consistent structured context."""
+        extra = self._sent_at_retry_extra(activation_code_id=activation_code_id, user_id=user_id, error=error)
+        logger.warning("sent_at update failed user_id=%s activation_code_id=%s attempt=%s/%s error=%s", user_id, activation_code_id, attempt, self._max_retries, str(error), extra=extra)
+
+    def _provider_retry_extra(self, *, context: _DispatchContext, attempt: int, error: Exception) -> dict[str, object]:
+        """Build provider retry structured log payload."""
+        return {
+            "event": "dispatch_provider_retry",
+            "user_id": context.user_id,
+            "activation_code_id": context.activation_code_id,
+            "provider": context.provider,
+            "attempt": attempt,
+            "max_attempts": self._max_retries,
+            "error_type": error.__class__.__name__,
+        }
+
+    def _log_provider_retry_failure(self, *, context: _DispatchContext, attempt: int, error: Exception) -> None:
+        """Log retryable provider failure before sleeping."""
+        extra = self._provider_retry_extra(context=context, attempt=attempt, error=error)
+        logger.warning(
+            "Provider send failed and will be retried user_id=%s activation_code_id=%s attempt=%s/%s error=%s",
+            context.user_id,
+            context.activation_code_id,
+            attempt,
+            self._max_retries,
+            str(error),
+            extra=extra,
+        )
 
     async def _mark_activation_code_sent(self, *, activation_code_id: int) -> None:
         """Persist `sent_at` for a delivered activation code."""

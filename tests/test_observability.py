@@ -133,6 +133,35 @@ def test_dispatch_metrics_terminal_failure_tracks_provider_errors(client) -> Non
     assert metrics.get_gauge("activation_codes_undelivered") == 1.0
 
 
+def test_dispatch_metrics_provider_retry_attempt_failures_tracked(client) -> None:
+    """Tracks transient provider retry failures while preserving dispatch-level metric semantics."""
+    metrics = client.app.state.metrics
+    assert isinstance(metrics, InMemoryMetricsRecorder)
+    metrics.reset()
+    attempt_counter = {"value": 0}
+
+    async def _flaky_provider(**_: object) -> None:
+        attempt_counter["value"] += 1
+        if attempt_counter["value"] < 3:
+            raise TimeoutError("provider-timeout")
+
+    client.app.state.email_provider.send_activation_email = _flaky_provider
+
+    response = client.post("/v1/users", json={"email": "metrics-retry@example.com", "password": "StrongPass123"})
+    assert response.status_code == 201
+    client.app.state.email_dispatcher.wait_until_idle(timeout=2.0)
+
+    tags = {"provider": "mock_email_provider"}
+    assert metrics.get_counter("dispatch_attempts_total", tags=tags) == 1.0
+    assert metrics.get_counter("dispatch_successes_total", tags=tags) == 1.0
+    assert metrics.get_counter("dispatch_terminal_failures_total", tags=tags) == 0.0
+    assert metrics.get_counter("provider_retry_attempt_failures_total", tags={"provider": "mock_email_provider", "error_type": "TimeoutError"}) == 2.0
+    assert metrics.get_counter("provider_errors_total", tags={"provider": "mock_email_provider", "error_type": "TimeoutError"}) == 0.0
+    latency = metrics.get_histogram("provider_latency_ms", tags=tags)
+    assert latency.count == 1
+    assert latency.total >= 0.0
+
+
 def test_metrics_endpoint_exports_dispatch_metrics(client) -> None:
     """Exports dispatcher metrics in Prometheus exposition format."""
     metrics = client.app.state.metrics
